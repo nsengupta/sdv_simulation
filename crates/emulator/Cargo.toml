@@ -6,5 +6,5 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 anyhow = "1.0.102"
-rand = "0.10.0"
+#rand = "0.10.0"
 socketcan = "3.5.0"
