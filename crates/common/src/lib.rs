@@ -1,8 +1,15 @@
+// Sibling order is *dependee before dependent* (foundation first), not "flow" order.
+// `digital_twin` imports `fsm`; `fsm` does not import `digital_twin`.
 pub mod domain_types;
+pub mod fsm;
+pub mod digital_twin;
 pub mod signals;
-pub mod virtual_car;
+pub mod virtual_car_actor;
 
-// Re-export for convenience
+#[cfg(test)]
+mod test;
+
+pub use digital_twin::{DigitalTwinCar, DigitalTwinCarVocabulary, NotFsmVocabulary};
 pub use domain_types::{VehicleEvent, VehicleState};
 pub use signals::VssSignal;
-pub use virtual_car::VirtualCar;
+pub use virtual_car_actor::VirtualCarActor;

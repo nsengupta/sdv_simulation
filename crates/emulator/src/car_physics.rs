@@ -1,13 +1,13 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::RngExt;
-use crate::domain_types::{RPM_IDLE, RPM_REDLINE};
+use common::domain_types::{RPM_IDLE, RPM_REDLINE};
 
-pub struct VirtualCar {
+pub struct PhysicalCar {
     pub speed: f64,
     pub rpm: u16,
 }
 
-impl VirtualCar {
+impl PhysicalCar {
     pub fn new() -> Self {
         Self { speed: 0.0, rpm: 800 } // Start idling at 800 RPM
     }
