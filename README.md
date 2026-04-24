@@ -50,16 +50,55 @@ If you use a different interface name, update the hardcoded interface strings in
 ### Paste Terminal A output here (`bash`)
 
 ```bash
-# Example: paste `cargo run -p emulator` runtime output here.
 # (Milestone-1)
+cargo run -p emulator
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running `target/debug/emulator`
+🚀 Emulator active on vcan0. Simulating VSS telemetry...
+DEBUG: Time=13s | RPM=1366 | Target=6500
+DEBUG: Time=13s | RPM=1876 | Target=6500
+DEBUG: Time=13s | RPM=2337 | Target=6500
+DEBUG: Time=13s | RPM=2753 | Target=6500
+DEBUG: Time=13s | RPM=3131 | Target=6500
+DEBUG: Time=14s | RPM=3466 | Target=6500
+DEBUG: Time=14s | RPM=3772 | Target=6500
+DEBUG: Time=14s | RPM=4048 | Target=6500
+DEBUG: Time=14s | RPM=4288 | Target=6500
+DEBUG: Time=14s | RPM=4508 | Target=6500
+DEBUG: Time=14s | RPM=4702 | Target=6500
+DEBUG: Time=14s | RPM=4885 | Target=6500
+DEBUG: Time=14s | RPM=5051 | Target=6500
+DEBUG: Time=14s | RPM=5192 | Target=6500
+DEBUG: Time=14s | RPM=5320 | Target=6500
+DEBUG: Time=15s | RPM=4906 | Target=1200
 ```
 
 ### Paste Terminal B output here (`bash`)
 
 ```bash
-# Example: paste `cargo run -p gateway` runtime output here.
-# Include actor heartbeat, transitions, and warning/recovery lines.
 # (Milestone-1)
+argo run -p gateway
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
+     Running `target/debug/gateway`
+[NASHIK-VC-001]: Initializing Digital Twin...
+[ACTION]: 📡 Publishing to Cloud: Idle
+⚡ Gateway on vcan0 — CAN → VehicleEvent → DigitalTwinCarVocabulary → VirtualCarActor
+[NASHIK-VC-001]: Transitioned to Idle
+[ACTION]: 📡 Publishing to Cloud: Driving
+[NASHIK-VC-001]: Transitioned to Driving
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+...
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+[ACTION]: 🔊 BUZZER ON - High Stress Detected!
+[ALERT]: Overspeed detected!
+[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 56863, tv_nsec: 499413717 })
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+...
+
 ```
 
 ### Milestone output snapshots (chronological descending)
@@ -67,8 +106,35 @@ If you use a different interface name, update the hardcoded interface strings in
 #### `Milestone-1` output snapshot (`bash`)
 
 ```bash
-# Paste a representative combined snapshot for Milestone-1 here.
-# Keep this section stable after the Milestone-1 check-in.
+# Gateway output
+Physical Car name: NASHIK-VC-001, initializing its Digital Twin ...
+[ACTION]: 📡 Publishing to Cloud: Idle
+[NASHIK-VC-001]: Transitioned to Idle
+⚡ Gateway on vcan0 — CAN → VehicleEvent → DigitalTwinCarVocabulary → VirtualCarActor
+[ACTION]: 📡 Publishing to Cloud: Driving
+[NASHIK-VC-001]: Transitioned to Driving
+[NASHIK-VC-001]: received heartbeat TimerTick
+[ACTION]: 🔊 BUZZER ON - High Stress Detected!
+[ALERT]: Overspeed detected!
+[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 57204, tv_nsec: 621285269 })
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+#..
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+[ACTION]: 🔇 BUZZER OFF - System Normal.
+[NASHIK-VC-001]: Transitioned to Driving
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+#..
+[ACTION]: 🔊 BUZZER ON - High Stress Detected!
+[ALERT]: Overspeed detected!
+[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 57221, tv_nsec: 952978030 })
+[NASHIK-VC-001]: received heartbeat TimerTick
+[NASHIK-VC-001]: received heartbeat TimerTick
+#..
+
 ```
 
 ## Current Architecture (milestones)
