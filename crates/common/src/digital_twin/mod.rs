@@ -45,7 +45,7 @@ impl DigitalTwinCar {
 /// [`FsmEvent`] stays `Clone` and free of [`RpcReplyPort`]; embed domain events via [`Self::Fsm`].
 #[derive(Debug)]
 pub enum DigitalTwinCarVocabulary {
-    /// Drive the FSM (telemetry patches are applied in the actor before [`crate::fsm::transition`]).
+    /// Drive the FSM (`crate::fsm::step` derives context from event payloads and computes transitions).
     Fsm(FsmEvent),
     /// Return a snapshot of the twin; does **not** call [`crate::fsm::transition`].
     GetStatus(RpcReplyPort<DigitalTwinCar>),

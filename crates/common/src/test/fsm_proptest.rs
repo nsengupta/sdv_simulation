@@ -52,7 +52,7 @@ proptest! {
         ctx in arb_context()
     ) {
         let initial_state = FsmState::Off;
-        let next_state = transition(&initial_state, &event, &ctx);
+        let next_state = transition(&initial_state, &event, &ctx, Instant::now());
 
         // INVARIANT: You can NEVER go from Off directly to Driving
         prop_assert_ne!(
@@ -71,7 +71,7 @@ proptest! {
         ctx in arb_context()
     ) {
         let before = state.clone();
-        let next = transition(&state, &FsmEvent::PowerOff, &ctx);
+        let next = transition(&state, &FsmEvent::PowerOff, &ctx, Instant::now());
         if before == FsmState::Idle {
             prop_assert_eq!(next, FsmState::Off);
         } else {
@@ -101,7 +101,7 @@ proptest! {
             speed: 50,
             ..VehicleContext::default()
         };
-        let next = transition(&state, &event, &ctx);
+        let next = transition(&state, &event, &ctx, Instant::now());
 
         // INVARIANT: In these states, PowerOff MUST be ignored.
         prop_assert_eq!(next, state, "Car allowed shutdown from a moving state!");

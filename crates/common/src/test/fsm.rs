@@ -1,7 +1,7 @@
-//! Unit tests for the vehicle FSM (`transition` / `output`).
+//! Unit tests for the FSM spec (`transition` / `output`).
 
-use crate::digital_twin::DigitalTwinCar;
 use crate::fsm::{output, transition, FsmAction, FsmEvent, FsmState, VehicleContext};
+use std::time::{Duration, Instant};
 
 /// Healthy `VehicleContext` matching a valid digital twin (same values as `VehicleContext::default()`).
 fn valid_twin_context() -> VehicleContext {
@@ -15,71 +15,108 @@ fn valid_twin_context() -> VehicleContext {
 }
 
 #[test]
-fn test_high_rpm_warning_and_cooldown() {
-    let mut ctx = valid_twin_context();
-    let mut state = FsmState::Idle;
+fn test_transition_and_output_high_rpm_warning() {
+    let ctx = valid_twin_context();
+    let now = Instant::now();
+    let driving = transition(&FsmState::Idle, &FsmEvent::UpdateRpm(1200), &ctx, now);
+    assert_eq!(driving, FsmState::Driving);
 
-    // 1. Move to Driving
-    ctx.rpm = 1200;
-    state = transition(&state, &FsmEvent::UpdateRpm(1200), &ctx);
+    let warning = transition(&driving, &FsmEvent::UpdateRpm(6500), &ctx, now);
+    assert!(matches!(warning, FsmState::Warning(_)));
+
+    let actions = output(&FsmState::Driving, &warning);
+    assert!(actions.contains(&FsmAction::StartBuzzer));
+    assert!(actions.contains(&FsmAction::LogWarning("Overspeed detected!".to_string())));
+}
+
+#[test]
+fn test_transition_standard_commute_flow() {
+    let ctx = valid_twin_context();
+    let now = Instant::now();
+    let mut state = transition(&FsmState::Off, &FsmEvent::PowerOn, &ctx, now);
+    assert_eq!(state, FsmState::Idle);
+
+    state = transition(&state, &FsmEvent::UpdateRpm(1500), &ctx, now);
     assert_eq!(state, FsmState::Driving);
 
-    // 2. Trigger Warning
-    state = transition(&state, &FsmEvent::UpdateRpm(6500), &ctx);
-    match state {
-        FsmState::Warning(_) => (), // Success
-        _ => panic!("Should have transitioned to Warning"),
-    }
+    state = transition(&state, &FsmEvent::UpdateSpeed(50), &ctx, now);
+    assert_eq!(state, FsmState::Driving);
 
-    // 3. Check Cooldown (should NOT transition back yet even if RPM is low)
-    let actions = output(&FsmState::Driving, &state);
-    assert!(actions.contains(&FsmAction::StartBuzzer));
+    state = transition(&state, &FsmEvent::UpdateSpeed(0), &ctx, now);
+    assert_eq!(state, FsmState::Idle);
 
-    state = transition(&state, &FsmEvent::UpdateRpm(3000), &ctx);
-    // Still in warning because 5 seconds haven't passed
-    match state {
-        FsmState::Warning(_) => (),
-        _ => panic!("Should still be in Warning during cooldown"),
-    }
+    state = transition(&state, &FsmEvent::PowerOff, &ctx, now);
+    assert_eq!(state, FsmState::Off);
 }
 
 #[test]
-fn test_standard_commute_flow() {
-    let mut car = DigitalTwinCar {
-        identity: "NASHIK-VC-001".to_string(),
-        current_state: FsmState::Off,
-        context: valid_twin_context(),
+fn test_transition_illegal_shutdown_attempt() {
+    let ctx = VehicleContext {
+        rpm: 3000,
+        speed: 80,
+        ..VehicleContext::default()
     };
-
-    let sequence = vec![
-        (FsmEvent::PowerOn, FsmState::Idle),
-        (FsmEvent::UpdateRpm(1500), FsmState::Driving),
-        (FsmEvent::UpdateSpeed(50), FsmState::Driving),
-        (FsmEvent::UpdateSpeed(0), FsmState::Idle),
-        (FsmEvent::PowerOff, FsmState::Off),
-    ];
-
-    for (event, expected_state) in sequence {
-        car.current_state = transition(&car.current_state, &event, &car.context);
-        assert_eq!(car.current_state, expected_state);
-    }
+    let state = transition(&FsmState::Driving, &FsmEvent::PowerOff, &ctx, Instant::now());
+    assert_eq!(state, FsmState::Driving);
 }
 
 #[test]
-fn test_illegal_shutdown_attempt() {
-    let mut car = DigitalTwinCar {
-        identity: "NASHIK-VC-001".to_string(),
-        current_state: FsmState::Driving,
-        context: VehicleContext {
-            rpm: 3000,
-            speed: 80,
-            ..VehicleContext::default()
-        },
-    };
+fn test_warning_recovery_requires_cooldown_and_low_rpm() {
+    let base = Instant::now();
+    let warning = FsmState::Warning(base);
+    let mut ctx = valid_twin_context();
+    ctx.speed = 30;
 
-    // Attempting PowerOff while Driving
-    car.current_state = transition(&car.current_state, &FsmEvent::PowerOff, &car.context);
+    // Before cooldown, must stay in Warning.
+    ctx.rpm = 3000;
+    let early = transition(
+        &warning,
+        &FsmEvent::TimerTick,
+        &ctx,
+        base + Duration::from_secs(2),
+    );
+    assert!(matches!(early, FsmState::Warning(_)));
 
-    // Invariant: Should still be Driving
-    assert_eq!(car.current_state, FsmState::Driving);
+    // After cooldown but still high RPM, must stay in Warning.
+    ctx.rpm = 6200;
+    let high_rpm = transition(
+        &warning,
+        &FsmEvent::TimerTick,
+        &ctx,
+        base + Duration::from_secs(6),
+    );
+    assert!(matches!(high_rpm, FsmState::Warning(_)));
+
+    // After cooldown and RPM low enough, recover to Driving.
+    ctx.rpm = 3000;
+    let recovered = transition(
+        &warning,
+        &FsmEvent::TimerTick,
+        &ctx,
+        base + Duration::from_secs(6),
+    );
+    assert_eq!(recovered, FsmState::Driving);
+
+    let actions = output(&warning, &recovered);
+    assert!(actions.contains(&FsmAction::StopBuzzer));
+}
+
+#[test]
+fn test_warning_recovers_to_idle_when_stationary() {
+    let base = Instant::now();
+    let warning = FsmState::Warning(base);
+    let mut ctx = valid_twin_context();
+    ctx.rpm = 2500;
+    ctx.speed = 0;
+
+    let recovered = transition(
+        &warning,
+        &FsmEvent::TimerTick,
+        &ctx,
+        base + Duration::from_secs(6),
+    );
+    assert_eq!(recovered, FsmState::Idle);
+
+    let actions = output(&warning, &recovered);
+    assert!(actions.contains(&FsmAction::StopBuzzer));
 }

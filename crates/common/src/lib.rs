@@ -4,6 +4,7 @@ pub mod domain_types;
 pub mod fsm;
 pub mod digital_twin;
 pub mod signals;
+pub mod transition_sink;
 pub mod virtual_car_actor;
 
 #[cfg(test)]
@@ -12,4 +13,7 @@ mod test;
 pub use digital_twin::{DigitalTwinCar, DigitalTwinCarVocabulary, NotFsmVocabulary};
 pub use domain_types::{VehicleEvent, VehicleState};
 pub use signals::VssSignal;
+pub use transition_sink::{
+    RawTransitionRecord, TokioMpscTransitionRecordSink, TransitionRecordSink, TransitionSinkError,
+};
 pub use virtual_car_actor::VirtualCarActor;

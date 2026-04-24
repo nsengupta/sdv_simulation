@@ -8,23 +8,48 @@
 
 use async_trait::async_trait;
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
+use std::sync::Arc;
 
 use crate::digital_twin::{DigitalTwinCar, DigitalTwinCarVocabulary};
-use crate::fsm::{self, FsmEvent, FsmState, VehicleContext};
+use crate::fsm::{self, ActorModeHintFromDomain, DomainAction, FsmEvent, FsmState, VehicleContext};
+use crate::transition_sink::{RawTransitionRecord, TransitionRecordSink, TransitionSinkError};
 
 /// The Digital Twin Actor
-pub struct VirtualCarActor;
+pub struct VirtualCarActor {
+    transition_sink: Option<Arc<dyn TransitionRecordSink>>,
+}
+
+pub struct VirtualCarRuntimeState {
+    twin_car: DigitalTwinCar,
+    next_sequence_no: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActorMode {
+    Normal,
+    Transitioning,
+}
 
 impl Default for VirtualCarActor {
     fn default() -> Self {
-        Self
+        Self {
+            transition_sink: None,
+        }
+    }
+}
+
+impl VirtualCarActor {
+    pub fn with_transition_sink(transition_sink: Arc<dyn TransitionRecordSink>) -> Self {
+        Self {
+            transition_sink: Some(transition_sink),
+        }
     }
 }
 
 #[async_trait]
 impl Actor for VirtualCarActor {
     type Msg = DigitalTwinCarVocabulary;
-    type State = DigitalTwinCar;
+    type State = VirtualCarRuntimeState;
     type Arguments = String;
 
     async fn pre_start(
@@ -32,12 +57,17 @@ impl Actor for VirtualCarActor {
         _myself: ActorRef<Self::Msg>,
         identity: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
-        println!("[{identity}]: Initializing Digital Twin...");
+        println!(
+            "Physical Car name: {identity}, initializing its Digital Twin ..."
+        );
 
-        Ok(DigitalTwinCar {
-            identity,
-            current_state: FsmState::Off,
-            context: VehicleContext::default(),
+        Ok(VirtualCarRuntimeState {
+            twin_car: DigitalTwinCar {
+                identity,
+                current_state: FsmState::Off,
+                context: VehicleContext::default(),
+            },
+            next_sequence_no: 1,
         })
     }
 
@@ -45,39 +75,104 @@ impl Actor for VirtualCarActor {
         &self,
         _myself: ActorRef<Self::Msg>,
         message: Self::Msg,
-        twin_car: &mut Self::State,
+        runtime_state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         use DigitalTwinCarVocabulary::{Fsm, GetStatus};
 
         match message {
             Fsm(evt) => {
-                match &evt {
-                    FsmEvent::UpdateRpm(r) => twin_car.context.rpm = *r,
-                    FsmEvent::UpdateSpeed(s) => twin_car.context.speed = *s,
-                    _ => {}
-                }
-
-                let next_state = fsm::transition(&twin_car.current_state, &evt, &twin_car.context);
-
-                if next_state != twin_car.current_state {
-                    let actions = fsm::output(&twin_car.current_state, &next_state);
-                    twin_car.current_state = next_state;
-                    for action in actions {
-                        action.execute(&twin_car.current_state).await;
-                    }
+                if matches!(evt, FsmEvent::TimerTick) {
+                    // TODO: rate-limit once structured logging is introduced.
                     println!(
-                        "[{}]: Transitioned to {:?}",
-                        twin_car.identity, twin_car.current_state
+                        "[{}]: received heartbeat TimerTick",
+                        runtime_state.twin_car.identity
                     );
                 }
+                let result =
+                    fsm::step(&runtime_state.twin_car.current_state, &runtime_state.twin_car.context, &evt, std::time::Instant::now());
+                let old_state = runtime_state.twin_car.current_state.clone();
+                let mut mode = ActorMode::Normal;
+
+                // Persist actor state first (non-negotiable ordering before transition log emit).
+                runtime_state.twin_car.current_state = result.next_state.clone();
+                runtime_state.twin_car.context = result.modified_ctx;
+
+                self.try_emit_transition_record(runtime_state, result.transition_record);
+
+                for action in result.actions {
+                    match action {
+                        DomainAction::StartBuzzer => {
+                            fsm::FsmAction::StartBuzzer.execute(&runtime_state.twin_car.current_state).await;
+                        }
+                        DomainAction::StopBuzzer => {
+                            fsm::FsmAction::StopBuzzer.execute(&runtime_state.twin_car.current_state).await;
+                        }
+                        DomainAction::PublishStateSync => {
+                            fsm::FsmAction::PublishStateSync.execute(&runtime_state.twin_car.current_state).await;
+                        }
+                        DomainAction::LogWarning(msg) => {
+                            fsm::FsmAction::LogWarning(msg).execute(&runtime_state.twin_car.current_state).await;
+                        }
+                        DomainAction::EnterMode(hint) => {
+                            mode = match hint {
+                                ActorModeHintFromDomain::Normal => ActorMode::Normal,
+                                ActorModeHintFromDomain::Transitioning => ActorMode::Transitioning,
+                            };
+                        }
+                    }
+                }
+
+                if runtime_state.twin_car.current_state != old_state {
+                    println!(
+                        "[{}]: Transitioned to {:?}",
+                        runtime_state.twin_car.identity, runtime_state.twin_car.current_state
+                    );
+                }
+                let _ = mode;
                 Ok(())
             }
-            GetStatus(reply) => Self::reply_get_status(reply, twin_car),
+            GetStatus(reply) => Self::reply_get_status(reply, &runtime_state.twin_car),
         }
     }
 }
 
 impl VirtualCarActor {
+    fn try_emit_transition_record(
+        &self,
+        runtime_state: &mut VirtualCarRuntimeState,
+        transition_record: fsm::TransitionRecord,
+    ) {
+        let Some(sink) = &self.transition_sink else {
+            return;
+        };
+
+        let sequence_no = runtime_state.next_sequence_no;
+        runtime_state.next_sequence_no = runtime_state.next_sequence_no.saturating_add(1);
+
+        let raw = RawTransitionRecord {
+            car_identity: runtime_state.twin_car.identity.clone(),
+            sequence_no,
+            transition: transition_record,
+        };
+
+        if let Err(err) = sink.try_emit(raw) {
+            match err {
+                TransitionSinkError::Full => {
+                    eprintln!(
+                        "[{}]: dropping transition record: sink full",
+                        runtime_state.twin_car.identity
+                    );
+                }
+                TransitionSinkError::Closed => {
+                    eprintln!(
+                        "[{}]: dropping transition record: sink closed",
+                        runtime_state.twin_car.identity
+                    );
+                }
+            }
+        }
+    }
+
     fn reply_get_status(
         reply: RpcReplyPort<DigitalTwinCar>,
         twin_car: &DigitalTwinCar,

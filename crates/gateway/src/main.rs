@@ -28,6 +28,50 @@ fn vehicle_event_to_vocabulary(ev: VehicleEvent) -> DigitalTwinCarVocabulary {
     DigitalTwinCarVocabulary::Fsm(fsm)
 }
 
+#[cfg(test)]
+mod tests {
+    use super::vehicle_event_to_vocabulary;
+    use common::fsm::FsmEvent;
+    use common::{DigitalTwinCarVocabulary, VehicleEvent, VssSignal};
+
+    #[test]
+    fn smoke_timer_tick_maps_to_fsm_timer_tick() {
+        let msg = vehicle_event_to_vocabulary(VehicleEvent::TimerTick);
+        match msg {
+            DigitalTwinCarVocabulary::Fsm(FsmEvent::TimerTick) => {}
+            other => panic!("unexpected mapping: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn smoke_system_reset_maps_to_power_off() {
+        let msg = vehicle_event_to_vocabulary(VehicleEvent::SystemReset);
+        match msg {
+            DigitalTwinCarVocabulary::Fsm(FsmEvent::PowerOff) => {}
+            other => panic!("unexpected mapping: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn smoke_vehicle_speed_is_clamped_before_update_speed() {
+        let low = vehicle_event_to_vocabulary(VehicleEvent::TelemetryUpdate(
+            VssSignal::VehicleSpeed(-4.0),
+        ));
+        let high = vehicle_event_to_vocabulary(VehicleEvent::TelemetryUpdate(
+            VssSignal::VehicleSpeed(500.0),
+        ));
+
+        match low {
+            DigitalTwinCarVocabulary::Fsm(FsmEvent::UpdateSpeed(v)) => assert_eq!(v, 0),
+            other => panic!("unexpected low-speed mapping: {other:?}"),
+        }
+        match high {
+            DigitalTwinCarVocabulary::Fsm(FsmEvent::UpdateSpeed(v)) => assert_eq!(v, 255),
+            other => panic!("unexpected high-speed mapping: {other:?}"),
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let (actor, _join) = ractor::spawn::<VirtualCarActor>(VIRTUAL_CAR_IDENTITY.to_string())

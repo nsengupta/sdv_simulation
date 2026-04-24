@@ -1,7 +1,7 @@
 use crate::domain_types::VehicleState;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct VehicleContext {
     pub rpm: u16,
     pub speed: u8,
@@ -36,7 +36,7 @@ pub enum FsmState {
     Warning(Instant),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FsmEvent {
     PowerOn,
     PowerOff,

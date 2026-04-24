@@ -54,3 +54,26 @@ impl PhysicalCar {
         //            now % 60, target_rpm, self.rpm, nudge_range_cloned.start, nudge_range_cloned.end, nudge);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PhysicalCar;
+    use common::domain_types::{RPM_IDLE, RPM_REDLINE};
+
+    #[test]
+    fn smoke_new_car_starts_at_idle_and_standstill() {
+        let car = PhysicalCar::new();
+        assert_eq!(car.speed, 0.0);
+        assert_eq!(car.rpm, RPM_IDLE);
+    }
+
+    #[test]
+    fn smoke_update_keeps_values_within_expected_bounds() {
+        let mut car = PhysicalCar::new();
+        for _ in 0..32 {
+            car.update();
+            assert!((0.0..=160.0).contains(&car.speed));
+            assert!((RPM_IDLE..=RPM_REDLINE).contains(&car.rpm));
+        }
+    }
+}

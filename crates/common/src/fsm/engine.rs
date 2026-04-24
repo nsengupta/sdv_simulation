@@ -1,35 +1,73 @@
 use super::machineries::{FsmAction, FsmEvent, FsmState, VehicleContext};
-use std::time::Instant;
+use crate::domain_types::{RPM_STRESS_THRESHOLD, STRESS_DURATION_THRESHOLD_SECS};
+use std::time::{Duration, Instant};
 
-pub fn transition(state: &FsmState, event: &FsmEvent, ctx: &VehicleContext) -> FsmState {
+const RPM_RECOVERY_THRESHOLD: u16 = 5000;
+
+/// Transition spec (runtime source of truth).
+///
+/// Human table:
+/// - Off + PowerOn(healthy ctx) -> Idle
+/// - Idle + PowerOff -> Off
+/// - Idle + UpdateRpm(rpm > 1000) -> Driving
+/// - Driving + UpdateSpeed(0) -> Idle
+/// - Driving + UpdateRpm(rpm > stress threshold) -> Warning(now)
+/// - Warning + TimerTick + cooldown elapsed + rpm <= recovery threshold -> Driving/Idle
+/// - Everything else -> stay in current state
+pub fn transition(
+    current_state: &FsmState,
+    event: &FsmEvent,
+    current_ctx: &VehicleContext,
+    now: Instant,
+) -> FsmState {
     use FsmEvent::*;
     use FsmState::*;
 
-    // [ CURRENT ]      | [ EVENT ]           | [ CONTEXT ]           | [ NEXT ]
-    // -----------------|---------------------|-----------------------|------------
-    match (state, event, ctx) {
-        // --- POWER ON ---
-        (Off, PowerOn, c) if c.is_healthy() => Idle,
-
-        // --- POWER OFF: only valid from Idle (stationary / safe shutdown).
-        // From other states, PowerOff is wrong input and is ignored (state unchanged).
-        (Idle, PowerOff, _) => Off,
-
-        // --- MOVEMENT LOGIC ---
-        (Idle, UpdateRpm(rpm), _) if *rpm > 1000 => Driving,
-        (Driving, UpdateSpeed(s), _) if *s == 0 => Idle,
-
-        // --- WARNING LOGIC ---
-        (Driving, UpdateRpm(rpm), _) if *rpm > 6000 => Warning(Instant::now()),
-
-        // --- DEFAULT BEHAVIOR ---
-        (current, event, _) => {
-            if matches!(event, PowerOff) {
-                eprintln!("[REJECTED]: PowerOff is invalid while in state {:?}", current);
+    match current_state {
+        Off => match event {
+            PowerOn if current_ctx.is_healthy() => Idle,
+            PowerOff => {
+                eprintln!("[REJECTED]: PowerOff is invalid while in state {:?}", current_state);
+                Off
             }
-            current.clone()
-        }
+            _ => Off,
+        },
+        Idle => match event {
+            PowerOff => Off,
+            UpdateRpm(rpm) if *rpm > 1000 => Driving,
+            _ => Idle,
+        },
+        Driving => match event {
+            UpdateSpeed(speed) if *speed == 0 => Idle,
+            UpdateRpm(rpm) if *rpm > RPM_STRESS_THRESHOLD => Warning(now),
+            PowerOff => {
+                eprintln!("[REJECTED]: PowerOff is invalid while in state {:?}", current_state);
+                Driving
+            }
+            _ => Driving,
+        },
+        Warning(began_at) => match event {
+            TimerTick if warning_recovery_ready(*began_at, now, current_ctx.rpm) => {
+                if current_ctx.speed == 0 {
+                    Idle
+                } else {
+                    Driving
+                }
+            }
+            PowerOff => {
+                eprintln!("[REJECTED]: PowerOff is invalid while in state {:?}", current_state);
+                Warning(*began_at)
+            }
+            _ => Warning(*began_at),
+        },
     }
+}
+
+fn warning_recovery_ready(began_at: Instant, now: Instant, rpm: u16) -> bool {
+    let warning_age = now
+        .checked_duration_since(began_at)
+        .unwrap_or(Duration::ZERO);
+    warning_age >= Duration::from_secs(STRESS_DURATION_THRESHOLD_SECS) && rpm <= RPM_RECOVERY_THRESHOLD
 }
 
 pub fn output(old_state: &FsmState, new_state: &FsmState) -> Vec<FsmAction> {
@@ -40,8 +78,8 @@ pub fn output(old_state: &FsmState, new_state: &FsmState) -> Vec<FsmAction> {
         // Entering Warning state from Driving
         (Driving, Warning(_)) => vec![StartBuzzer, LogWarning("Overspeed detected!".to_string())],
 
-        // Recovering from Warning back to Driving
-        (Warning(_), Driving) => vec![StopBuzzer],
+        // Recovering from Warning
+        (Warning(_), Driving) | (Warning(_), Idle) => vec![StopBuzzer],
 
         // General state sync on any transition
         (old, new) if old != new => vec![PublishStateSync],
