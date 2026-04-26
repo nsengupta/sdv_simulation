@@ -1,20 +1,26 @@
 //! Crate-local tests for `common` (not the `tests/` integration harness).
 //!
-//! - **`fsm`** — deterministic unit tests for the FSM (`cargo test -p common`).
-//! - **`fsm_proptest`** — property tests (`cargo test -p common --features proptest`).
-//! - **`scenario_test`** — actor black-box scenarios (`GetStatus`, lifecycle).
+//! Focused test modules by contract boundary:
+//! - `fsm_engine_contract` — deterministic unit tests for transition/output rules
+//! - `fsm_step_contract` — step boundary contract tests
+//! - `fsm_properties` — property tests behind the `proptest` feature
+//! - `actor_contract` — actor and transition-sink behavior contracts
+//! - `scenarios_smoke` — lightweight end-to-end behavior smoke tests
 
 #[cfg(test)]
-mod fsm;
+mod actor_contract;
 
 #[cfg(test)]
-mod fsm_step;
+mod fsm_engine_contract;
 
 #[cfg(all(test, feature = "proptest"))]
-mod fsm_proptest;
+mod fsm_properties;
 
 #[cfg(test)]
-mod scenario_test;
+mod fsm_step_contract;
+
+#[cfg(test)]
+mod scenarios_smoke;
 
 /// A RAII (Resource Acquisition Is Initialization) guard for Ractor tests.
 #[allow(dead_code)] // reserved for scenario helpers; not wired yet

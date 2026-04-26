@@ -181,6 +181,114 @@ Signals use **11-bit standard IDs** and **2-byte big-endian** payloads:
 Unknown IDs or non-standard frames are ignored by the ingress path (unless and until the decoder
 is extended).
 
+## FSM + Lighting Contract (spec for upcoming extension)
+
+This section describes a planned extension: corner-light actuation based on ambient light (`lux`)
+while preserving the current top-level FSM (`Off`, `Idle`, `Driving`, `Warning`).
+
+### Goal
+
+Add a **lighting sub-state** in context so that:
+
+- low ambient light requests front corner lights ON,
+- the system remains in a **pending** sub-state until an actuator acknowledgment event is received,
+- repeated sensor updates do not spam actuator commands.
+
+This keeps the current machine as an **extended FSM** (top-level state + orthogonal context), not a
+full hierarchical state machine yet.
+
+### Scope and Non-Goals
+
+- Scope: sensor-driven corner-light control and acknowledgment-driven completion.
+- Non-goal: replacing the existing primary FSM state model.
+- Non-goal: introducing a full multi-region/hierarchical statechart runtime.
+
+### Proposed Context Extension
+
+- `lighting_state: LightingState`
+- `ambient_lux: u16` (or equivalent normalized representation)
+
+`LightingState`:
+
+- `Off`
+- `OnRequested`
+- `On`
+- `OffRequested`
+
+### Proposed Event Vocabulary
+
+- `UpdateAmbientLux(u16)` — ambient sensor update from ingress path.
+- `CornerLightsOnConfirmed` — actuator/body-controller ACK for ON.
+- `CornerLightsOffConfirmed` — actuator/body-controller ACK for OFF.
+- `CornerLightsActuationFailed` (optional) — negative ACK or timeout/error path.
+
+### Proposed Domain Actions
+
+- `RequestCornerLightsOn`
+- `RequestCornerLightsOff`
+- `LogLightingInfo(String)` (optional)
+- `LogLightingFault(String)` (optional, for failure/timeout path)
+
+### Threshold Contract (hysteresis)
+
+Use separate thresholds:
+
+- `LUX_ON_THRESHOLD`
+- `LUX_OFF_THRESHOLD` where `LUX_OFF_THRESHOLD > LUX_ON_THRESHOLD`
+
+Reason: avoid rapid ON/OFF toggling near one boundary.
+
+### Transition Contract (lighting sub-state)
+
+Given `lighting_state` and incoming event:
+
+1. `Off` + `UpdateAmbientLux(lux <= LUX_ON_THRESHOLD)`  
+   -> `OnRequested` + emit `RequestCornerLightsOn`
+2. `OnRequested` + `CornerLightsOnConfirmed`  
+   -> `On`
+3. `On` + `UpdateAmbientLux(lux >= LUX_OFF_THRESHOLD)`  
+   -> `OffRequested` + emit `RequestCornerLightsOff`
+4. `OffRequested` + `CornerLightsOffConfirmed`  
+   -> `Off`
+5. `OnRequested` + repeated low-lux updates  
+   -> stay `OnRequested` (no duplicate ON command)
+6. `OffRequested` + repeated high-lux updates  
+   -> stay `OffRequested` (no duplicate OFF command)
+7. Optional robustness: pending + failure/timeout  
+   -> retry policy or safe fallback + `LogLightingFault(...)`
+
+### Main FSM Interaction Policy
+
+Lighting remains orthogonal to primary drive state:
+
+- primary FSM (`Off`, `Idle`, `Driving`, `Warning`) continues to be the authoritative operational state;
+- lighting logic runs in context as a secondary concern;
+- when primary state is `Off`, effective lighting should be forced/kept `Off` (or ON requests blocked).
+
+### Behavioral Guarantees (contract-level invariants)
+
+- ON request emits only from `LightingState::Off`.
+- OFF request emits only from `LightingState::On`.
+- Pending states resolve only via ACK/failure/timeout events.
+- Duplicate sensor updates do not cause duplicate actuator requests.
+- Existing warning/buzzer logic remains independent from lighting actuation.
+
+### Architecture Mapping (where this belongs)
+
+- Signal encode/decode: `common::signals` (`VssSignal`)
+- Ingress mapping to actor vocabulary: `gateway/src/main.rs`
+- FSM vocabulary/context/actions: `common::fsm::machineries`
+- Transition and output rules: `common::fsm::engine`
+- Step boundary for context mutation + domain actions: `common::fsm::step`
+- Side-effect execution and ACK ingestion path: `common::virtual_car_actor`
+
+### Limitations (current and expected)
+
+- Actuator ACK channel is modeled, not a production-grade body-controller integration.
+- Timing/timeout policy is deliberately simple for simulation clarity.
+- No formal concurrent-region statechart runtime yet; orthogonal behavior is represented through context.
+- Determinism depends on explicit event ordering and `now` handling at the step boundary.
+
 ## Dependencies (not exhaustive)
 
 - **`socketcan`** — CAN sockets and frames on Linux  

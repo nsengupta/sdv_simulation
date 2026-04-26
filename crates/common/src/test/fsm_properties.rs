@@ -63,7 +63,7 @@ proptest! {
         );
     }
 
-    /// **PowerOff** is only a legal transition from **`Idle`** → **`Off`**.
+    /// **PowerOff** is only a legal transition from **`Idle`** -> **`Off`**.
     /// From any other state it is wrong input: the FSM must **not** change.
     #[test]
     fn test_power_off_only_valid_from_idle(
