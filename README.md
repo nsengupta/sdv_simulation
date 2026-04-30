@@ -77,7 +77,7 @@ DEBUG: Time=15s | RPM=4906 | Target=1200
 
 ```bash
 # (Milestone-1)
-argo run -p gateway
+cargo run -p gateway
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running `target/debug/gateway`
 [NASHIK-VC-001]: Initializing Digital Twin...

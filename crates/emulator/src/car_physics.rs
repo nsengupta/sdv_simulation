@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 use rand::RngExt;
-use common::domain_types::{RPM_IDLE, RPM_REDLINE};
+use common::domain_types::{RPM_IDLE, RPM_REDLINE_THRESHOLD};
 
 pub struct PhysicalCar {
     pub speed: f64,
@@ -45,7 +45,7 @@ impl PhysicalCar {
 
         // 3. Apply and Clamp
         self.rpm = (self.rpm as f32 + adjustment)
-            .clamp(RPM_IDLE as f32, RPM_REDLINE as f32) as u16;
+            .clamp(RPM_IDLE as f32, RPM_REDLINE_THRESHOLD as f32) as u16;
 
         println!("DEBUG: Time={}s | RPM={} | Target={}", now % 60, self.rpm, target_rpm);
 
@@ -58,7 +58,7 @@ impl PhysicalCar {
 #[cfg(test)]
 mod tests {
     use super::PhysicalCar;
-    use common::domain_types::{RPM_IDLE, RPM_REDLINE};
+    use common::domain_types::{RPM_IDLE, RPM_REDLINE_THRESHOLD};
 
     #[test]
     fn smoke_new_car_starts_at_idle_and_standstill() {
@@ -73,7 +73,7 @@ mod tests {
         for _ in 0..32 {
             car.update();
             assert!((0.0..=160.0).contains(&car.speed));
-            assert!((RPM_IDLE..=RPM_REDLINE).contains(&car.rpm));
+            assert!((RPM_IDLE..=RPM_REDLINE_THRESHOLD).contains(&car.rpm));
         }
     }
 }

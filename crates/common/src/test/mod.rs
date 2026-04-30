@@ -20,6 +20,9 @@ mod fsm_properties;
 mod fsm_step_contract;
 
 #[cfg(test)]
+mod lighting_step_contract;
+
+#[cfg(test)]
 mod scenarios_smoke;
 
 /// A RAII (Resource Acquisition Is Initialization) guard for Ractor tests.

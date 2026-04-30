@@ -1,5 +1,5 @@
 use super::machineries::{FsmAction, FsmEvent, FsmState, VehicleContext};
-use crate::domain_types::{RPM_STRESS_THRESHOLD, STRESS_DURATION_THRESHOLD_SECS};
+use crate::vehicle_constants::{RPM_GREENLINE_THRESHOLD, RPM_STRESS_DURATION_THRESHOLD_SECS};
 use std::time::{Duration, Instant};
 
 const RPM_RECOVERY_THRESHOLD: u16 = 5000;
@@ -39,7 +39,7 @@ pub fn transition(
         },
         Driving => match event {
             UpdateSpeed(speed) if *speed == 0 => Idle,
-            UpdateRpm(rpm) if *rpm > RPM_STRESS_THRESHOLD => Warning(now),
+            UpdateRpm(rpm) if *rpm > RPM_GREENLINE_THRESHOLD => Warning(now),
             PowerOff => {
                 eprintln!("[REJECTED]: PowerOff is invalid while in state {:?}", current_state);
                 Driving
@@ -67,7 +67,7 @@ fn warning_recovery_ready(began_at: Instant, now: Instant, rpm: u16) -> bool {
     let warning_age = now
         .checked_duration_since(began_at)
         .unwrap_or(Duration::ZERO);
-    warning_age >= Duration::from_secs(STRESS_DURATION_THRESHOLD_SECS) && rpm <= RPM_RECOVERY_THRESHOLD
+    warning_age >= Duration::from_secs(RPM_STRESS_DURATION_THRESHOLD_SECS) && rpm <= RPM_RECOVERY_THRESHOLD
 }
 
 pub fn output(old_state: &FsmState, new_state: &FsmState) -> Vec<FsmAction> {

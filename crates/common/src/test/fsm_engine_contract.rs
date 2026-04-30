@@ -11,6 +11,8 @@ fn valid_twin_context() -> VehicleContext {
         fuel_level: 85,
         oil_pressure: 30,
         tyre_pressure_ok: true,
+        ambient_lux: 100,
+        lighting_state: crate::fsm::LightingState::Off,
     }
 }
 

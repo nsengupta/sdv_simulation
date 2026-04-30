@@ -3,7 +3,8 @@
 use proptest::prelude::*;
 use std::time::{Duration, Instant};
 
-use crate::fsm::{transition, FsmEvent, FsmState, VehicleContext};
+use crate::fsm::{step, transition, DomainAction, FsmEvent, FsmState, LightingState, VehicleContext};
+use crate::vehicle_constants::{LUX_OFF_THRESHOLD, LUX_ON_THRESHOLD};
 
 prop_compose! {
     fn arb_context()(rpm in 0..8000u16, speed in 0..250u8) -> VehicleContext {
@@ -13,6 +14,8 @@ prop_compose! {
             fuel_level: 85,
             oil_pressure: 30,
             tyre_pressure_ok: true,
+            ambient_lux: 100,
+            lighting_state: LightingState::Off,
         }
     }
 }
@@ -43,6 +46,36 @@ fn arb_fsm_state() -> impl Strategy<Value = FsmState> {
             FsmState::Warning(Instant::now() - Duration::from_nanos(1 + (n % 1_000_000_000)))
         }),
     ]
+}
+
+proptest! {
+    #[test]
+    fn test_deadband_never_emits_light_requests_when_off(
+        lux in (LUX_ON_THRESHOLD + 1)..LUX_OFF_THRESHOLD
+    ) {
+        let ctx = VehicleContext {
+            lighting_state: LightingState::Off,
+            ..VehicleContext::default()
+        };
+        let result = step(&FsmState::Idle, &ctx, &FsmEvent::UpdateAmbientLux(lux), Instant::now());
+        prop_assert!(!result.actions.contains(&DomainAction::RequestCornerLightsOn));
+        prop_assert!(!result.actions.contains(&DomainAction::RequestCornerLightsOff));
+        prop_assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    }
+
+    #[test]
+    fn test_deadband_never_emits_light_requests_when_on(
+        lux in (LUX_ON_THRESHOLD + 1)..LUX_OFF_THRESHOLD
+    ) {
+        let ctx = VehicleContext {
+            lighting_state: LightingState::On,
+            ..VehicleContext::default()
+        };
+        let result = step(&FsmState::Driving, &ctx, &FsmEvent::UpdateAmbientLux(lux), Instant::now());
+        prop_assert!(!result.actions.contains(&DomainAction::RequestCornerLightsOn));
+        prop_assert!(!result.actions.contains(&DomainAction::RequestCornerLightsOff));
+        prop_assert_eq!(result.modified_ctx.lighting_state, LightingState::On);
+    }
 }
 
 proptest! {

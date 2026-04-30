@@ -18,7 +18,8 @@
 //! - Domain emits [`ActorModeHintFromDomain`]; runtime actor owns `ActorMode` and mailbox behavior.
 
 use super::engine::{output, transition};
-use super::machineries::{FsmAction, FsmEvent, FsmState, VehicleContext};
+use super::machineries::{FsmAction, FsmEvent, FsmState, LightingState, VehicleContext};
+use crate::vehicle_constants::{LUX_OFF_THRESHOLD, LUX_ON_THRESHOLD};
 use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +34,8 @@ pub enum DomainAction {
     StopBuzzer,
     PublishStateSync,
     LogWarning(String),
+    RequestCornerLightsOn,
+    RequestCornerLightsOff,
     EnterMode(ActorModeHintFromDomain),
 }
 
@@ -64,6 +67,9 @@ pub fn step(
     match event {
         FsmEvent::UpdateRpm(rpm) => modified_ctx.rpm = *rpm,
         FsmEvent::UpdateSpeed(speed) => modified_ctx.speed = *speed,
+        FsmEvent::UpdateAmbientLux(lux) => modified_ctx.ambient_lux = *lux,
+        FsmEvent::CornerLightsOnConfirmed => modified_ctx.lighting_state = LightingState::On,
+        FsmEvent::CornerLightsOffConfirmed => modified_ctx.lighting_state = LightingState::Off,
         FsmEvent::PowerOn | FsmEvent::PowerOff | FsmEvent::TimerTick => {}
     }
 
@@ -72,6 +78,18 @@ pub fn step(
         .into_iter()
         .filter_map(map_fsm_action)
         .collect();
+
+    match (&current_ctx.lighting_state, event) {
+        (LightingState::Off, FsmEvent::UpdateAmbientLux(lux)) if *lux <= LUX_ON_THRESHOLD => {
+            modified_ctx.lighting_state = LightingState::OnRequested;
+            actions.push(DomainAction::RequestCornerLightsOn);
+        }
+        (LightingState::On, FsmEvent::UpdateAmbientLux(lux)) if *lux >= LUX_OFF_THRESHOLD => {
+            modified_ctx.lighting_state = LightingState::OffRequested;
+            actions.push(DomainAction::RequestCornerLightsOff);
+        }
+        _ => {}
+    }
 
     if matches!(next_state, FsmState::Warning(_)) {
         actions.push(DomainAction::EnterMode(ActorModeHintFromDomain::Transitioning));

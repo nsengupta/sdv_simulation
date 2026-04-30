@@ -1,6 +1,14 @@
 use crate::domain_types::VehicleState;
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LightingState {
+    Off,
+    OnRequested,
+    On,
+    OffRequested,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct VehicleContext {
     pub rpm: u16,
@@ -8,6 +16,8 @@ pub struct VehicleContext {
     pub fuel_level: u8,
     pub oil_pressure: u8,
     pub tyre_pressure_ok: bool,
+    pub ambient_lux: u16,
+    pub lighting_state: LightingState,
 }
 
 impl Default for VehicleContext {
@@ -18,6 +28,8 @@ impl Default for VehicleContext {
             fuel_level: 85,
             oil_pressure: 30,
             tyre_pressure_ok: true,
+            ambient_lux: 100,
+            lighting_state: LightingState::Off,
         }
     }
 }
@@ -43,6 +55,9 @@ pub enum FsmEvent {
     // Atomic updates from the bus
     UpdateRpm(u16),
     UpdateSpeed(u8),
+    UpdateAmbientLux(u16),
+    CornerLightsOnConfirmed,
+    CornerLightsOffConfirmed,
     // Internal triggers
     TimerTick,
 }

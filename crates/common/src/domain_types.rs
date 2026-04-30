@@ -1,11 +1,10 @@
 use crate::signals::VssSignal;
-
-// --- Vehicle Calibration Constants ---
-pub const RPM_IDLE: u16 = 800;
-pub const RPM_REDLINE: u16 = 7000;
-pub const RPM_STRESS_THRESHOLD: u16 = 6000;
-
-pub const STRESS_DURATION_THRESHOLD_SECS: u64 = 5;
+pub use crate::vehicle_constants::{
+    RPM_GREENLINE_THRESHOLD,
+    RPM_IDLE,
+    RPM_REDLINE_THRESHOLD,
+    RPM_STRESS_DURATION_THRESHOLD_SECS,
+};
 
 use serde::{Deserialize, Serialize};
 

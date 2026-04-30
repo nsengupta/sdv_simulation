@@ -113,6 +113,12 @@ impl Actor for VirtualCarActor {
                         DomainAction::LogWarning(msg) => {
                             fsm::FsmAction::LogWarning(msg).execute(&runtime_state.twin_car.current_state).await;
                         }
+                        DomainAction::RequestCornerLightsOn => {
+                            println!("[ACTION]: 💡 Requesting front corner lights ON.");
+                        }
+                        DomainAction::RequestCornerLightsOff => {
+                            println!("[ACTION]: 💡 Requesting front corner lights OFF.");
+                        }
                         DomainAction::EnterMode(hint) => {
                             mode = match hint {
                                 ActorModeHintFromDomain::Normal => ActorMode::Normal,

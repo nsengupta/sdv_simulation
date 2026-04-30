@@ -5,6 +5,7 @@ pub mod fsm;
 pub mod digital_twin;
 pub mod signals;
 pub mod transition_sink;
+pub mod vehicle_constants;
 pub mod virtual_car_actor;
 
 #[cfg(test)]
