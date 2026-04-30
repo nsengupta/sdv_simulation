@@ -37,3 +37,14 @@ pub enum VehicleEvent {
     /// Emergency stop or system reset
     SystemReset,
 }
+
+/// Canonical physical-side vocabulary consumed by projection adapters.
+#[derive(Debug, Clone)]
+pub enum PhysicalCarVocabulary {
+    /// Data received from the Ingress Bus
+    TelemetryUpdate(VssSignal),
+    /// A system-generated heartbeat or check
+    TimerTick,
+    /// Emergency stop or system reset
+    SystemReset,
+}

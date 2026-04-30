@@ -1,6 +1,7 @@
 // Sibling order is *dependee before dependent* (foundation first), not "flow" order.
 // `digital_twin` imports `fsm`; `fsm` does not import `digital_twin`.
 pub mod domain_types;
+pub mod engine;
 pub mod fsm;
 pub mod digital_twin;
 pub mod signals;
@@ -12,7 +13,8 @@ pub mod virtual_car_actor;
 mod test;
 
 pub use digital_twin::{DigitalTwinCar, DigitalTwinCarVocabulary, NotFsmVocabulary};
-pub use domain_types::{VehicleEvent, VehicleState};
+pub use domain_types::{PhysicalCarVocabulary, VehicleEvent, VehicleState};
+pub use engine::connectors::{PhysicalToDigitalProjector, Projector, ProjectionError};
 pub use signals::VssSignal;
 pub use transition_sink::{
     RawTransitionRecord, TokioMpscTransitionRecordSink, TransitionRecordSink, TransitionSinkError,
