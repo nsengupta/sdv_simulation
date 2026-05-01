@@ -1,6 +1,7 @@
 //! Phase 2 generator — the "Virtual ECU".
 
 pub mod car_physics;
+pub mod models;
 
 use anyhow::Result;
 use car_physics::PhysicalCar;
@@ -18,11 +19,14 @@ fn main() -> Result<()> {
     loop {
         car.update();
 
-        let speed_signal = VssSignal::VehicleSpeed(car.speed);
+        let speed_signal = VssSignal::VehicleSpeed(car.speed_kph());
         socket.write_frame(&speed_signal.to_can_frame()?)?;
 
-        let rpm_signal = VssSignal::EngineRpm(car.rpm);
+        let rpm_signal = VssSignal::EngineRpm(car.rpm());
         socket.write_frame(&rpm_signal.to_can_frame()?)?;
+
+        let ambient_lux_signal = VssSignal::AmbientLux(car.ambient_lux());
+        socket.write_frame(&ambient_lux_signal.to_can_frame()?)?;
 
         thread::sleep(Duration::from_millis(100));
     }

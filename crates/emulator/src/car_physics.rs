@@ -1,57 +1,74 @@
 use std::time::{SystemTime, UNIX_EPOCH};
-use rand::RngExt;
-use common::domain_types::{RPM_IDLE, RPM_REDLINE_THRESHOLD};
+use common::domain_types::RPM_IDLE;
+
+use crate::models::{
+    AmbientRoadLightModel, PhysicalWorldModelConfig, RpmModel, SpeedModel,
+};
 
 pub struct PhysicalCar {
-    pub speed: f64,
-    pub rpm: u16,
+    speed_kph: f64,
+    rpm: u16,
+    ambient_lux: u16,
+    speed_model: SpeedModel,
+    rpm_model: RpmModel,
+    ambient_road_light_model: AmbientRoadLightModel,
 }
 
 impl PhysicalCar {
     pub fn new() -> Self {
-        Self { speed: 0.0, rpm: 800 } // Start idling at 800 RPM
+        Self::new_with_config(PhysicalWorldModelConfig::daytime_tunnel_profile())
     }
 
-    /// The "Physics-Lite" Update
+    pub fn new_with_config(cfg: PhysicalWorldModelConfig) -> Self {
+        let speed_model = SpeedModel::new(cfg.speed);
+        let rpm_model = RpmModel::new(cfg.rpm);
+        let ambient_road_light_model = AmbientRoadLightModel::new(cfg.ambient_road_light);
+
+        Self {
+            speed_kph: 0.0,
+            rpm: RPM_IDLE,
+            ambient_lux: 850,
+            speed_model,
+            rpm_model,
+            ambient_road_light_model,
+        }
+    }
+
+    pub fn speed_kph(&self) -> f64 {
+        self.speed_kph
+    }
+
+    pub fn rpm(&self) -> u16 {
+        self.rpm
+    }
+
+    pub fn ambient_lux(&self) -> u16 {
+        self.ambient_lux
+    }
+
+    /// Physics-Lite orchestrator.
+    ///
+    /// Collects fresh physical-world values from dedicated models without
+    /// embedding signal-generation formulas directly in this function.
     pub fn update(&mut self) {
-        let mut rng = rand::rng();
-
-        // 1. Random Walk for Speed
-        // Bias it slightly upward (0.6) so the car eventually moves
-        let speed_nudge = rng.random_range(-0.5..0.6);
-        self.speed = (self.speed + speed_nudge).clamp(0.0, 160.0);
-
-        // 2. Mock Logic for RPM
-        // In a real car, RPM is linked to Speed/Gear.
-        // For now, we'll just simulate a slight "throttle hum."
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
 
-        // 1. Determine the Target and the "Intent"
-        let target_rpm = if (now / 15) % 2 == 0 {
-            6500.0 // Target is well into the Stress Zone
-        } else {
-            1200.0 // Target is back in the safe zone
-        };
+        self.speed_kph = self.speed_model.next_speed_kph(self.speed_kph);
+        self.rpm = self.rpm_model.next_rpm(self.rpm, now);
+        self.ambient_lux = self.ambient_road_light_model.next_ambient_lux(now);
 
-        // 2. Proportional Movement Logic
-        // Calculate the 'error' (gap)
-        let gap = target_rpm - self.rpm as f32;
-
-        // Move 10% of the gap + a small random jitter to simulate engine vibration
-        let adjustment = (gap * 0.1) + (rand::random::<f32>() * 10.0 - 5.0);
-
-        // 3. Apply and Clamp
-        self.rpm = (self.rpm as f32 + adjustment)
-            .clamp(RPM_IDLE as f32, RPM_REDLINE_THRESHOLD as f32) as u16;
-
-        println!("DEBUG: Time={}s | RPM={} | Target={}", now % 60, self.rpm, target_rpm);
-
-        // println!("DEBUG: Time={}s | Target RPM={} | Self RPM={} | nudge_range (start)={} | nudge_range (end)={} | \
-        //nudge ={}",
-        //            now % 60, target_rpm, self.rpm, nudge_range_cloned.start, nudge_range_cloned.end, nudge);
+        let target_rpm = self.rpm_model.target_rpm_for_epoch(now);
+        println!(
+            "DEBUG: Time={}s | SpeedKph={:.2} | RPM={} (Target={}) | AmbientLux={}",
+            now % 60,
+            self.speed_kph,
+            self.rpm,
+            target_rpm,
+            self.ambient_lux
+        );
     }
 }
 
@@ -63,8 +80,9 @@ mod tests {
     #[test]
     fn smoke_new_car_starts_at_idle_and_standstill() {
         let car = PhysicalCar::new();
-        assert_eq!(car.speed, 0.0);
-        assert_eq!(car.rpm, RPM_IDLE);
+        assert_eq!(car.speed_kph(), 0.0);
+        assert_eq!(car.rpm(), RPM_IDLE);
+        assert!((0..=1200).contains(&car.ambient_lux()));
     }
 
     #[test]
@@ -72,8 +90,9 @@ mod tests {
         let mut car = PhysicalCar::new();
         for _ in 0..32 {
             car.update();
-            assert!((0.0..=160.0).contains(&car.speed));
-            assert!((RPM_IDLE..=RPM_REDLINE_THRESHOLD).contains(&car.rpm));
+            assert!((0.0..=160.0).contains(&car.speed_kph()));
+            assert!((RPM_IDLE..=RPM_REDLINE_THRESHOLD).contains(&car.rpm()));
+            assert!((0..=1200).contains(&car.ambient_lux()));
         }
     }
 }

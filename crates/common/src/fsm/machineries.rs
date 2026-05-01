@@ -1,5 +1,6 @@
 use crate::domain_types::VehicleState;
 use std::time::Instant;
+use time::{OffsetDateTime, UtcOffset, macros::format_description};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightingState {
@@ -83,23 +84,42 @@ impl FsmAction {
     pub async fn execute(&self, current_fsm_state: &FsmState) {
         match self {
             Self::StartBuzzer => {
-                println!("[ACTION]: 🔊 BUZZER ON - High Stress Detected!");
+                println!(
+                    "[ACTION @ {}]: 🔊 BUZZER ON - High Stress Detected!",
+                    action_timestamp()
+                );
             }
             Self::StopBuzzer => {
-                println!("[ACTION]: 🔇 BUZZER OFF - System Normal.");
+                println!(
+                    "[ACTION @ {}]: 🔇 BUZZER OFF - System Normal.",
+                    action_timestamp()
+                );
             }
             Self::LogWarning(msg) => {
-                eprintln!("[ALERT]: {}", msg);
+                eprintln!("[ALERT @ {}]: {}", action_timestamp(), msg);
             }
             Self::PublishStateSync => {
                 // Here we use the parameter to perform the conversion
                 let public_state = VehicleState::from(current_fsm_state);
-                println!("[ACTION]: 📡 Publishing to Cloud: {:?}", public_state);
+                println!(
+                    "[ACTION @ {}]: 📡 Publishing to Cloud: {:?}",
+                    action_timestamp(),
+                    public_state
+                );
             }
             Self::None => {}
         }
     }
 }
+
+fn action_timestamp() -> String {
+    let now = OffsetDateTime::now_utc().to_offset(UtcOffset::UTC);
+    let hms = now
+        .format(format_description!("[hour]:[minute]:[second]"))
+        .unwrap_or_else(|_| "00:00:00".to_string());
+    format!("{hms} {:09}", now.nanosecond())
+}
+
 impl From<&FsmState> for VehicleState {
     fn from(fsm: &FsmState) -> Self {
         match fsm {

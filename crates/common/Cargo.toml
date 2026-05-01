@@ -17,3 +17,4 @@ ractor = { version = "0.15.12", features = ["async-trait"] }
 serde = { version = "1.0.228", features = ["derive"] }
 socketcan = "3.5.0"
 tokio = { version = "=1.48.0", features = ["macros", "rt-multi-thread", "sync", "time"] }
+time = { version = "0.3", features = ["formatting", "macros"] }

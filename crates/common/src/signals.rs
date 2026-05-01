@@ -2,6 +2,7 @@ use socketcan::{CanFrame, EmbeddedFrame, StandardId};
 
 pub const ID_SPEED: u16 = 0x101;
 pub const ID_RPM: u16 = 0x102;
+pub const ID_AMBIENT_LUX: u16 = 0x103;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VssSignal {
@@ -9,6 +10,8 @@ pub enum VssSignal {
     VehicleSpeed(f64),
     /// Vehicle.Powertrain.CombustionEngine.Speed (Unit: rpm, Scaling: 1.0)
     EngineRpm(u16),
+    /// Vehicle.Cabin or exterior ambient light sensor (Unit: lux, Scaling: 1.0)
+    AmbientLux(u16),
 }
 
 impl VssSignal {
@@ -30,6 +33,10 @@ impl VssSignal {
             ID_RPM => {
                 let raw = u16::from_be_bytes([data[0], data[1]]);
                 Some(Self::EngineRpm(raw))
+            }
+            ID_AMBIENT_LUX => {
+                let raw = u16::from_be_bytes([data[0], data[1]]);
+                Some(Self::AmbientLux(raw))
             }
             _ => None,
         }
@@ -65,6 +72,9 @@ impl VssSignal {
             }
             Self::EngineRpm(val) => {
                 build_frame(ID_RPM, &val.to_be_bytes())
+            }
+            Self::AmbientLux(val) => {
+                build_frame(ID_AMBIENT_LUX, &val.to_be_bytes())
             }
         }
     }

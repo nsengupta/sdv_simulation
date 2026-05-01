@@ -13,6 +13,7 @@ impl Projector<PhysicalCarVocabulary, DigitalTwinCarVocabulary> for PhysicalToDi
             PhysicalCarVocabulary::TelemetryUpdate(vss) => match vss {
                 VssSignal::VehicleSpeed(kmh) => FsmEvent::UpdateSpeed(kmh.clamp(0.0, 255.0) as u8),
                 VssSignal::EngineRpm(rpm) => FsmEvent::UpdateRpm(rpm),
+                VssSignal::AmbientLux(lux) => FsmEvent::UpdateAmbientLux(lux),
             },
             PhysicalCarVocabulary::TimerTick => FsmEvent::TimerTick,
             PhysicalCarVocabulary::SystemReset => FsmEvent::PowerOff,

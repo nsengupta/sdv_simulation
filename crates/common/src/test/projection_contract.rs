@@ -60,3 +60,15 @@ fn given_rpm_signal_when_projected_then_maps_exact_rpm() {
         other => panic!("unexpected rpm mapping: {other:?}"),
     }
 }
+
+#[test]
+fn given_ambient_lux_signal_when_projected_then_maps_to_fsm_ambient_lux() {
+    let projector = PhysicalToDigitalProjector;
+    let out = projector
+        .project(PhysicalCarVocabulary::TelemetryUpdate(VssSignal::AmbientLux(28)))
+        .expect("ambient lux projection must succeed");
+    match out {
+        DigitalTwinCarVocabulary::Fsm(FsmEvent::UpdateAmbientLux(v)) => assert_eq!(v, 28),
+        other => panic!("unexpected ambient lux mapping: {other:?}"),
+    }
+}

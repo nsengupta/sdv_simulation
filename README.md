@@ -43,8 +43,9 @@ If you use a different interface name, update the hardcoded interface strings in
 
 ## What You Should See (outputs)
 
-- **Terminal A (`emulator`)** should print a startup line and then continue running while publishing speed/RPM CAN frames.
-- **Terminal B (`gateway`)** should print startup output, state/action logs, and heartbeat receipt logs from the virtual car actor while consuming CAN frames from `vcan0`.
+- **Terminal A (`emulator`)** prints startup and continuous debug lines with speed, RPM target tracking, and ambient lux while publishing all three as CAN telemetry.
+- **Terminal B (`gateway`)** prints startup output, state transition logs, and timestamped action/alert logs from the controller runtime while consuming CAN frames from `vcan0`.
+- Heartbeat (`TimerTick`) log lines are **off by default** and can be enabled with `--print-timer-tick`.
 - Both processes are long-running by design; stop with `Ctrl+C` when done.
 
 ### Paste Terminal A output here (`bash`)
@@ -55,22 +56,10 @@ cargo run -p emulator
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
      Running `target/debug/emulator`
 🚀 Emulator active on vcan0. Simulating VSS telemetry...
-DEBUG: Time=13s | RPM=1366 | Target=6500
-DEBUG: Time=13s | RPM=1876 | Target=6500
-DEBUG: Time=13s | RPM=2337 | Target=6500
-DEBUG: Time=13s | RPM=2753 | Target=6500
-DEBUG: Time=13s | RPM=3131 | Target=6500
-DEBUG: Time=14s | RPM=3466 | Target=6500
-DEBUG: Time=14s | RPM=3772 | Target=6500
-DEBUG: Time=14s | RPM=4048 | Target=6500
-DEBUG: Time=14s | RPM=4288 | Target=6500
-DEBUG: Time=14s | RPM=4508 | Target=6500
-DEBUG: Time=14s | RPM=4702 | Target=6500
-DEBUG: Time=14s | RPM=4885 | Target=6500
-DEBUG: Time=14s | RPM=5051 | Target=6500
-DEBUG: Time=14s | RPM=5192 | Target=6500
-DEBUG: Time=14s | RPM=5320 | Target=6500
-DEBUG: Time=15s | RPM=4906 | Target=1200
+DEBUG: Time=33s | SpeedKph=40.46 | RPM=6388 (Target=6500) | AmbientLux=136
+DEBUG: Time=33s | SpeedKph=40.24 | RPM=6399 (Target=6500) | AmbientLux=0
+DEBUG: Time=34s | SpeedKph=39.98 | RPM=6405 (Target=6500) | AmbientLux=0
+DEBUG: Time=34s | SpeedKph=39.71 | RPM=6410 (Target=6500) | AmbientLux=17
 ```
 
 ### Paste Terminal B output here (`bash`)
@@ -80,94 +69,69 @@ DEBUG: Time=15s | RPM=4906 | Target=1200
 cargo run -p gateway
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.05s
      Running `target/debug/gateway`
-[NASHIK-VC-001]: Initializing Digital Twin...
-[ACTION]: 📡 Publishing to Cloud: Idle
-⚡ Gateway on vcan0 — CAN → VehicleEvent → DigitalTwinCarVocabulary → VirtualCarActor
-[NASHIK-VC-001]: Transitioned to Idle
-[ACTION]: 📡 Publishing to Cloud: Driving
-[NASHIK-VC-001]: Transitioned to Driving
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-...
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-[ACTION]: 🔊 BUZZER ON - High Stress Detected!
-[ALERT]: Overspeed detected!
-[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 56863, tv_nsec: 499413717 })
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-...
-
-```
-
-### Milestone output snapshots (chronological descending)
-
-#### `Milestone-1` output snapshot (`bash`)
-
-```bash
-# Gateway output
 Physical Car name: NASHIK-VC-001, initializing its Digital Twin ...
-[ACTION]: 📡 Publishing to Cloud: Idle
+[ACTION @ 14:19:28 103912443]: 📡 Publishing to Cloud: Idle
+⚡ Gateway on vcan0 — CAN → VehicleEvent → PhysicalCarVocabulary → DigitalTwinCarVocabulary → VirtualCarActor
 [NASHIK-VC-001]: Transitioned to Idle
-⚡ Gateway on vcan0 — CAN → VehicleEvent → DigitalTwinCarVocabulary → VirtualCarActor
-[ACTION]: 📡 Publishing to Cloud: Driving
+[ACTION @ 14:19:30 210212284]: 📡 Publishing to Cloud: Driving
 [NASHIK-VC-001]: Transitioned to Driving
-[NASHIK-VC-001]: received heartbeat TimerTick
-[ACTION]: 🔊 BUZZER ON - High Stress Detected!
-[ALERT]: Overspeed detected!
-[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 57204, tv_nsec: 621285269 })
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-#..
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-[ACTION]: 🔇 BUZZER OFF - System Normal.
+[ACTION @ 14:19:32 210389826]: 🔊 BUZZER ON - High Stress Detected!
+[ALERT @ 14:19:32 210429121]: Overspeed detected!
+[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 56863, tv_nsec: 499413717 })
+[ACTION @ 14:19:34 013528967]: 💡 Requesting front corner lights ON.
+[ACTION @ 14:19:45 355467066]: 🔇 BUZZER OFF - System Normal.
 [NASHIK-VC-001]: Transitioned to Driving
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-#..
-[ACTION]: 🔊 BUZZER ON - High Stress Detected!
-[ALERT]: Overspeed detected!
-[NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 57221, tv_nsec: 952978030 })
-[NASHIK-VC-001]: received heartbeat TimerTick
-[NASHIK-VC-001]: received heartbeat TimerTick
-#..
 
 ```
+
+### Runtime notes
+
+- Gateway heartbeat lines are optional:
+  - default: `cargo run -p gateway` (quiet timer ticks)
+  - verbose: `cargo run -p gateway -- --print-timer-tick`
+- Action/alert logs include timestamps (`HH:mm:ss nsec`) to measure gaps between transitions and effects.
+
+### Known Demo Behaviors (must-keep section for each demo milestone)
+
+- Lighting actions are usually less frequent than RPM/warning transitions because ambient-lux tunnel events are probabilistic while RPM target flips are periodic.
+- Corner-light ON/OFF request emission is idempotent; without a simulated ACK loop (`CornerLightsOnConfirmed` / `CornerLightsOffConfirmed`), repeated ON/OFF request lines are intentionally suppressed while in pending lighting states.
+- Gateway output is action/transition-centric by default; it does not print every incoming telemetry frame unless explicitly instrumented.
+- TimerTick heartbeat logs are disabled by default and only shown when gateway is started with `--print-timer-tick`.
 
 ## Current Architecture (milestones)
 
-- `Milestone-1` (latest): FSM spec + step contract split, warning recovery behavior, and raw transition sink abstraction.
+- Current milestone demonstrates ambient-lux ingress and lighting command intent emission on top of the established FSM + controller runtime split.
 
 ## Architecture And Design
 
 ### Gateway behavior (high level)
 
-- **Context** (`VehicleContext`) holds latest RPM/speed and health flags used by FSM guards.
-- **Events**: `PowerOn`, `PowerOff`, `UpdateRpm`, `UpdateSpeed`, and periodic `TimerTick`.
-- **FSM spec**: `transition(...)` + `output(...)` in `common::fsm::engine` are the canonical transition/action rules.
+- **Context** (`VehicleContext`) holds latest RPM/speed/ambient-lux and health flags used by FSM guards.
+- **Events**: `PowerOn`, `PowerOff`, `UpdateRpm`, `UpdateSpeed`, `UpdateAmbientLux`, and periodic `TimerTick`.
+- **FSM spec**: `transition(...)` + `output(...)` in `common::engine::op_strategy::transition_map` are the canonical transition/action rules.
 - **Execution wrapper**: `step(...)` in `common::fsm::step` derives context from event payload, calls `transition/output`, and returns `StepResult`.
 - **Time handling**: `transition(...)` takes `now` explicitly (no hidden clock calls), which keeps time-based behavior deterministic in tests.
 - **Warning recovery**: `Warning(began_at)` is recovered on `TimerTick` only when cooldown elapsed and RPM is at/below recovery threshold; recovers to `Driving` or `Idle` based on speed.
+- **Lighting behavior**: lux hysteresis (`LUX_ON_THRESHOLD` / `LUX_OFF_THRESHOLD`) emits `RequestCornerLightsOn/Off` intents from `step(...)` based on `LightingState`.
 - **Transition sink**: actor can emit raw transition records through `TransitionRecordSink` (best-effort, warn-and-continue on sink full/closed).
+- **Actuation boundary**: runtime executes `DomainAction` through `DefaultActuationManager`; FSM remains intent-only.
+- **Layered ingress path**: gateway maps `VehicleEvent` to `PhysicalCarVocabulary`, then projects through `PhysicalToDigitalProjector` before sending to the runtime controller.
 
 ### What it does
 
-1. **Emulator (`emulator`)** — Acts like a minimal “virtual ECU”: a toy vehicle model (`VirtualCar`) updates speed and RPM on a timer, encodes them as `VssSignal` values, and **writes standard CAN frames** to a Linux CAN interface (default `vcan0`).
-2. **Gateway (`gateway`)** — Opens the same interface, **reads CAN frames**, decodes known frames into `VssSignal`, maps them into FSM events, and sends them to the actor. A Tokio loop sends periodic `TimerTick` heartbeat events.
-3. **Common library (`common`)** — Shared types and behavior: VSS-style signals, CAN encode/decode, FSM (`transition/output`), step contract (`step` + `StepResult`), and the virtual car actor with optional transition sink.
+1. **Emulator (`emulator`)** — Acts like a minimal “virtual ECU”: model components update speed/RPM/ambient-lux, encode them as `VssSignal`, and **write standard CAN frames** to Linux CAN (`vcan0` by default).
+2. **Gateway (`gateway`)** — Opens the same interface, **reads CAN frames**, decodes known frames into `VssSignal`, maps ingress to `PhysicalCarVocabulary`, projects to `DigitalTwinCarVocabulary`, and sends to controller runtime. A Tokio loop sends periodic `TimerTick` heartbeat events.
+3. **Common library (`common`)** — Shared types and behavior: VSS-style signals, physical/digital vocabulary contracts, projection adapters, strategy (`transition/output`), step contract (`step` + `StepResult`), and controller runtime with optional transition sink.
 
-Together, the crates demonstrate: **encode → CAN → decode → domain events → stateful logic**, which mirrors patterns used in software-defined vehicle stacks (without tying the repo to a specific OEM stack).
+Together, the crates demonstrate: **encode → CAN → decode → domain events → stateful logic → runtime actuation intents**, mirroring core SDV control-path patterns.
 
 ### Crates
 
 | Crate | Role |
 |--------|------|
-| `common` | `VssSignal`, FSM spec (`transition/output`), step contract, actor runtime, transition sink abstraction |
-| `emulator` | Sends simulated telemetry frames at ~10 Hz |
-| `gateway` | CAN ingress + event mapping + Tokio tick loop feeding the actor |
+| `common` | `VssSignal`, physical/digital vocabularies, projector adapters, op strategy (`transition/output`), step contract, controller runtime, default actuation manager, transition sink abstraction |
+| `emulator` | Sends simulated speed/RPM/ambient-lux telemetry at ~10 Hz |
+| `gateway` | CAN ingress + physical mapping + projection + Tokio tick loop feeding the controller |
 
 ### CAN mapping (concrete protocol in code)
 
@@ -177,18 +141,20 @@ Signals use **11-bit standard IDs** and **2-byte big-endian** payloads:
 |------------------|--------|---------|
 | Vehicle speed | `0x101` | `u16`, scaled: km/h × 100 (decode divides by 100) |
 | Engine RPM | `0x102` | `u16`, RPM as integer |
+| Ambient lux | `0x103` | `u16`, lux as integer |
 
 Unknown IDs or non-standard frames are ignored by the ingress path (unless and until the decoder
 is extended).
 
-## FSM + Lighting Contract (spec for upcoming extension)
+## FSM + Lighting Contract (current implementation and limits)
 
-This section describes a planned extension: corner-light actuation based on ambient light (`lux`)
-while preserving the current top-level FSM (`Off`, `Idle`, `Driving`, `Warning`).
+Corner-light actuation based on ambient light (`lux`) is implemented as an orthogonal context concern while preserving the top-level FSM (`Off`, `Idle`, `Driving`, `Warning`).
 
-### Goal
+### Ambient Light Sensing and Acting in this version
 
-Add a **lighting sub-state** in context so that:
+#### Current goal coverage
+
+The current code provides a **lighting sub-state** in context so that:
 
 - low ambient light requests front corner lights ON,
 - the system remains in a **pending** sub-state until an actuator acknowledgment event is received,
@@ -197,13 +163,13 @@ Add a **lighting sub-state** in context so that:
 This keeps the current machine as an **extended FSM** (top-level state + orthogonal context), not a
 full hierarchical state machine yet.
 
-### Scope and Non-Goals
+#### Scope and Non-Goals (current)
 
-- Scope: sensor-driven corner-light control and acknowledgment-driven completion.
+- Scope: sensor-driven corner-light control with pending-state safety and command idempotency.
 - Non-goal: replacing the existing primary FSM state model.
 - Non-goal: introducing a full multi-region/hierarchical statechart runtime.
 
-### Proposed Context Extension
+#### Context Extension
 
 - `lighting_state: LightingState`
 - `ambient_lux: u16` (or equivalent normalized representation)
@@ -215,21 +181,20 @@ full hierarchical state machine yet.
 - `On`
 - `OffRequested`
 
-### Proposed Event Vocabulary
+#### Event Vocabulary
 
 - `UpdateAmbientLux(u16)` — ambient sensor update from ingress path.
 - `CornerLightsOnConfirmed` — actuator/body-controller ACK for ON.
 - `CornerLightsOffConfirmed` — actuator/body-controller ACK for OFF.
-- `CornerLightsActuationFailed` (optional) — negative ACK or timeout/error path.
+- `CornerLightsActuationFailed` is not implemented yet.
 
-### Proposed Domain Actions
+#### Domain Actions
 
 - `RequestCornerLightsOn`
 - `RequestCornerLightsOff`
-- `LogLightingInfo(String)` (optional)
-- `LogLightingFault(String)` (optional, for failure/timeout path)
+- `LogLightingInfo`/`LogLightingFault` are deferred.
 
-### Threshold Contract (hysteresis)
+#### Threshold Contract (hysteresis)
 
 Use separate thresholds:
 
@@ -238,7 +203,7 @@ Use separate thresholds:
 
 Reason: avoid rapid ON/OFF toggling near one boundary.
 
-### Transition Contract (lighting sub-state)
+#### Transition Contract (lighting sub-state)
 
 Given `lighting_state` and incoming event:
 
@@ -254,10 +219,9 @@ Given `lighting_state` and incoming event:
    -> stay `OnRequested` (no duplicate ON command)
 6. `OffRequested` + repeated high-lux updates  
    -> stay `OffRequested` (no duplicate OFF command)
-7. Optional robustness: pending + failure/timeout  
-   -> retry policy or safe fallback + `LogLightingFault(...)`
+7. Failure/timeout retry policy is deferred to a later milestone.
 
-### Main FSM Interaction Policy
+#### Main FSM Interaction Policy
 
 Lighting remains orthogonal to primary drive state:
 
@@ -265,7 +229,7 @@ Lighting remains orthogonal to primary drive state:
 - lighting logic runs in context as a secondary concern;
 - when primary state is `Off`, effective lighting should be forced/kept `Off` (or ON requests blocked).
 
-### Behavioral Guarantees (contract-level invariants)
+#### Behavioral Guarantees (contract-level invariants)
 
 - ON request emits only from `LightingState::Off`.
 - OFF request emits only from `LightingState::On`.
@@ -273,21 +237,23 @@ Lighting remains orthogonal to primary drive state:
 - Duplicate sensor updates do not cause duplicate actuator requests.
 - Existing warning/buzzer logic remains independent from lighting actuation.
 
-### Architecture Mapping (where this belongs)
+#### Architecture Mapping (where this belongs)
 
 - Signal encode/decode: `common::signals` (`VssSignal`)
-- Ingress mapping to actor vocabulary: `gateway/src/main.rs`
+- Ingress mapping to physical vocabulary: `gateway/src/ingress/mapping.rs`
+- Physical to digital projector: `common::engine::connectors::PhysicalToDigitalProjector`
 - FSM vocabulary/context/actions: `common::fsm::machineries`
-- Transition and output rules: `common::fsm::engine`
+- Transition and output rules: `common::engine::op_strategy::transition_map`
 - Step boundary for context mutation + domain actions: `common::fsm::step`
-- Side-effect execution and ACK ingestion path: `common::virtual_car_actor`
+- Side-effect execution and ACK ingestion path: `common::engine::controller::VehicleController` (currently aliased to `VirtualCarActor`)
 
-### Limitations (current and expected)
+#### Limitations (current and expected)
 
-- Actuator ACK channel is modeled, not a production-grade body-controller integration.
+- Actuator ACK channel is modeled in vocabulary but not yet simulated end-to-end by a dedicated async ACK subsystem.
 - Timing/timeout policy is deliberately simple for simulation clarity.
 - No formal concurrent-region statechart runtime yet; orthogonal behavior is represented through context.
 - Determinism depends on explicit event ordering and `now` handling at the step boundary.
+- Gateway does not print every incoming telemetry frame by default (focuses on transitions/actions).
 
 ## Dependencies (not exhaustive)
 
@@ -301,6 +267,9 @@ Lighting remains orthogonal to primary drive state:
 - Configurable CAN interface via CLI or env  
 - `spawn_blocking` (or dedicated thread) for blocking socket reads without stalling the async runtime  
 - Richer VSS coverage, diagnostics, or recording  
+- Standards-driven signal ingress contract (DBC/AUTOSAR-style source of truth for CAN IDs, payload scaling, and signal semantics), then project from that contract into `PhysicalCarVocabulary`  
+- Emulator modeling notes/tutorial index (starting with `docs/rpm-model-tutorial.md`) for quick onboarding and review  
+- Handcrafted emulator profile injection (test/demo/realistic) so scenario behavior is intentional and reproducible  
 
 ---
 
