@@ -11,6 +11,12 @@
 mod actor_contract;
 
 #[cfg(test)]
+mod controller_api_contract;
+
+#[cfg(test)]
+mod engine_namespace_contract;
+
+#[cfg(test)]
 mod fsm_engine_contract;
 
 #[cfg(all(test, feature = "proptest"))]
@@ -21,6 +27,9 @@ mod fsm_step_contract;
 
 #[cfg(test)]
 mod lighting_step_contract;
+
+#[cfg(test)]
+mod op_strategy_contract;
 
 #[cfg(test)]
 mod projection_contract;

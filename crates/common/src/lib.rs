@@ -17,8 +17,9 @@ pub use domain_types::{PhysicalCarVocabulary, VehicleEvent, VehicleState};
 pub use engine::connectors::{PhysicalToDigitalProjector, Projector, ProjectionError};
 pub use engine::context::VehicleControllerContext;
 pub use engine::controller::{
-    ActuationError, ActuationManager, DefaultActuationManager, VehicleController,
-    VehicleControllerError, VehicleControllerRuntimeOptions,
+    ActuationCommand, ActuationError, ActuationFeedback, ActuationManager, CorrelationId,
+    DefaultActuationManager, VehicleController, VehicleControllerError,
+    VehicleControllerRuntimeOptions,
 };
 pub use signals::VssSignal;
 pub use transition_sink::{

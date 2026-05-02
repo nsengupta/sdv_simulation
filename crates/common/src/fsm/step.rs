@@ -17,8 +17,8 @@
 //! Boundary rule:
 //! - Domain emits [`ActorModeHintFromDomain`]; runtime actor owns `ActorMode` and mailbox behavior.
 
-use super::engine::{output, transition};
 use super::machineries::{FsmAction, FsmEvent, FsmState, LightingState, VehicleContext};
+use crate::engine::op_strategy::transition_map::{output, transition};
 use crate::vehicle_constants::{LUX_OFF_THRESHOLD, LUX_ON_THRESHOLD};
 use std::time::Instant;
 

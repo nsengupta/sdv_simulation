@@ -17,6 +17,8 @@ impl Projector<PhysicalCarVocabulary, DigitalTwinCarVocabulary> for PhysicalToDi
             },
             PhysicalCarVocabulary::TimerTick => FsmEvent::TimerTick,
             PhysicalCarVocabulary::SystemReset => FsmEvent::PowerOff,
+            PhysicalCarVocabulary::CornerLightsOnConfirmed => FsmEvent::CornerLightsOnConfirmed,
+            PhysicalCarVocabulary::CornerLightsOffConfirmed => FsmEvent::CornerLightsOffConfirmed,
         };
         Ok(DigitalTwinCarVocabulary::Fsm(fsm))
     }

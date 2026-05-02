@@ -72,3 +72,27 @@ fn given_ambient_lux_signal_when_projected_then_maps_to_fsm_ambient_lux() {
         other => panic!("unexpected ambient lux mapping: {other:?}"),
     }
 }
+
+#[test]
+fn given_corner_lights_on_confirmed_when_projected_then_maps_to_fsm() {
+    let projector = PhysicalToDigitalProjector;
+    let out = projector
+        .project(PhysicalCarVocabulary::CornerLightsOnConfirmed)
+        .expect("on ack projection must succeed");
+    match out {
+        DigitalTwinCarVocabulary::Fsm(FsmEvent::CornerLightsOnConfirmed) => {}
+        other => panic!("unexpected on ack mapping: {other:?}"),
+    }
+}
+
+#[test]
+fn given_corner_lights_off_confirmed_when_projected_then_maps_to_fsm() {
+    let projector = PhysicalToDigitalProjector;
+    let out = projector
+        .project(PhysicalCarVocabulary::CornerLightsOffConfirmed)
+        .expect("off ack projection must succeed");
+    match out {
+        DigitalTwinCarVocabulary::Fsm(FsmEvent::CornerLightsOffConfirmed) => {}
+        other => panic!("unexpected off ack mapping: {other:?}"),
+    }
+}

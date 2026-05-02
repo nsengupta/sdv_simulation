@@ -1,4 +1,5 @@
 use crate::digital_twin::{DigitalTwinCar, DigitalTwinCarVocabulary};
+use crate::engine::controller::actuation_contract::ActuationCommand;
 use crate::engine::connectors::{PhysicalToDigitalProjector, Projector};
 use crate::fsm::FsmEvent;
 use crate::PhysicalCarVocabulary;
@@ -21,9 +22,19 @@ pub enum VehicleControllerError {
     ReplyDropped,
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct VehicleControllerRuntimeOptions {
     pub log_timer_tick: bool,
+    pub actuation_command_tx: Option<tokio::sync::mpsc::Sender<ActuationCommand>>,
+}
+
+impl Default for VehicleControllerRuntimeOptions {
+    fn default() -> Self {
+        Self {
+            log_timer_tick: false,
+            actuation_command_tx: None,
+        }
+    }
 }
 
 impl VehicleController {
@@ -53,8 +64,22 @@ impl VehicleController {
         }
     }
 
-    pub fn actor_ref(&self) -> &ActorRef<DigitalTwinCarVocabulary> {
-        &self.actor
+    /// Lifecycle: primary FSM enters powered operation (not representable as `PhysicalCarVocabulary` today).
+    pub async fn send_power_on(&self) -> Result<(), VehicleControllerError> {
+        self.actor
+            .send_message(FsmEvent::PowerOn.into())
+            .map_err(|e| VehicleControllerError::Messaging(format!("{e}")))?;
+        Ok(())
+    }
+
+    /// Lifecycle: request primary FSM shutdown to `Off` when legal (`Idle` → `Off` in current rules).
+    ///
+    /// From non-`Idle` powered states the FSM rejects `PowerOff` (see strategy); the message is still delivered.
+    pub async fn send_power_off(&self) -> Result<(), VehicleControllerError> {
+        self.actor
+            .send_message(FsmEvent::PowerOff.into())
+            .map_err(|e| VehicleControllerError::Messaging(format!("{e}")))?;
+        Ok(())
     }
 
     /// Public ingress path: physical car vocabulary enters via projector boundary.

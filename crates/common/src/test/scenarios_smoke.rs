@@ -1,9 +1,9 @@
 //! Black-box scenario smoke tests: actor lifecycle + state journeys.
 
 use crate::digital_twin::DigitalTwinCarVocabulary;
+use crate::engine::controller::virtual_car_actor::VirtualCarActor;
 use crate::fsm::{FsmEvent, FsmState};
 use crate::test::ActorGuard;
-use crate::VirtualCarActor;
 use ractor::concurrency::Duration;
 use ractor::Actor;
 
