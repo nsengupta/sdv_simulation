@@ -21,7 +21,6 @@ use crate::transition_sink::{RawTransitionRecord, TransitionRecordSink, Transiti
 /// The Digital Twin Actor
 pub struct VirtualCarActor {
     transition_sink: Option<Arc<dyn TransitionRecordSink>>,
-    actuation_manager: Arc<dyn ActuationManager>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +48,7 @@ pub struct VirtualCarRuntimeState {
     twin_car: DigitalTwinCar,
     next_sequence_no: u64,
     runtime_options: VehicleControllerRuntimeOptions,
+    actuation_manager: Arc<dyn ActuationManager>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +61,6 @@ impl Default for VirtualCarActor {
     fn default() -> Self {
         Self {
             transition_sink: None,
-            actuation_manager: Arc::new(DefaultActuationManager),
         }
     }
 }
@@ -71,7 +70,6 @@ impl VirtualCarActor {
     pub fn with_transition_sink(transition_sink: Arc<dyn TransitionRecordSink>) -> Self {
         Self {
             transition_sink: Some(transition_sink),
-            actuation_manager: Arc::new(DefaultActuationManager),
         }
     }
 }
@@ -91,6 +89,20 @@ impl Actor for VirtualCarActor {
         println!(
             "Physical Car name: {identity}, initializing its Digital Twin ..."
         );
+        let actuation_manager: Arc<dyn ActuationManager> =
+            if let Some(tx) = args.runtime_options.actuation_command_tx.clone() {
+                let session_id = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos() as u64)
+                    .unwrap_or(0);
+                Arc::new(DefaultActuationManager::with_command_channel(
+                    identity.clone(),
+                    session_id,
+                    tx,
+                ))
+            } else {
+                Arc::new(DefaultActuationManager::default())
+            };
 
         Ok(VirtualCarRuntimeState {
             twin_car: DigitalTwinCar {
@@ -100,6 +112,7 @@ impl Actor for VirtualCarActor {
             },
             next_sequence_no: 1,
             runtime_options: args.runtime_options,
+            actuation_manager,
         })
     }
 
@@ -140,7 +153,7 @@ impl Actor for VirtualCarActor {
                             };
                         }
                         other_action => {
-                            if let Err(err) = self
+                            if let Err(err) = runtime_state
                                 .actuation_manager
                                 .execute(&other_action, &runtime_state.twin_car)
                                 .await

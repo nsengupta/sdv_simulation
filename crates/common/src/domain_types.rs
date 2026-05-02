@@ -47,4 +47,8 @@ pub enum PhysicalCarVocabulary {
     TimerTick,
     /// Emergency stop or system reset
     SystemReset,
+    /// Actuator / body-controller confirmed corner lights are on (non-CAN ingress path in simulation).
+    CornerLightsOnConfirmed,
+    /// Actuator / body-controller confirmed corner lights are off (non-CAN ingress path in simulation).
+    CornerLightsOffConfirmed,
 }

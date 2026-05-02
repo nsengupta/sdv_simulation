@@ -39,12 +39,12 @@ When done, stop both with `Ctrl+C`, then tear down `vcan0` (requires `sudo`):
 sudo ip link del vcan0
 ```
 
-If you use a different interface name, update the hardcoded interface strings in `crates/emulator/src/main.rs` and `crates/gateway/src/main.rs`.
+If you use a different interface name, update the hardcoded interface strings in `crates/emulator/src/main.rs` and `crates/gateway/src/gateway_runtime.rs` (see `DEFAULT_CAN_INTERFACE`).
 
 ## What You Should See (outputs)
 
 - **Terminal A (`emulator`)** prints startup and continuous debug lines with speed, RPM target tracking, and ambient lux while publishing all three as CAN telemetry.
-- **Terminal B (`gateway`)** prints startup output, state transition logs, and timestamped action/alert logs from the controller runtime while consuming CAN frames from `vcan0`.
+- **Terminal B (`gateway`)** prints startup output, state transition logs, and timestamped action/alert logs from the controller runtime while consuming CAN frames from `vcan0`. When lighting requests are emitted, after a short simulated delay you may also see `[actuation-ingress @ corr …]` lines for corner-light ON/OFF acknowledgements (see Known Demo Behaviors).
 - Heartbeat (`TimerTick`) log lines are **off by default** and can be enabled with `--print-timer-tick`.
 - Both processes are long-running by design; stop with `Ctrl+C` when done.
 
@@ -79,10 +79,13 @@ Physical Car name: NASHIK-VC-001, initializing its Digital Twin ...
 [ALERT @ 14:19:32 210429121]: Overspeed detected!
 [NASHIK-VC-001]: Transitioned to Warning(Instant { tv_sec: 56863, tv_nsec: 499413717 })
 [ACTION @ 14:19:34 013528967]: 💡 Requesting front corner lights ON.
+[actuation-ingress @ corr CorrelationId { source_id: "...", session_id: 0, sequence_no: 1 }]: corner lights ON acknowledged (non-CAN path)
 [ACTION @ 14:19:45 355467066]: 🔇 BUZZER OFF - System Normal.
 [NASHIK-VC-001]: Transitioned to Driving
 
 ```
+
+*(The `CorrelationId` fields in the actuation line above are illustrative; the runtime prints the real `Debug` value from the controller.)*
 
 ### Runtime notes
 
@@ -93,8 +96,11 @@ Physical Car name: NASHIK-VC-001, initializing its Digital Twin ...
 
 ### Known Demo Behaviors (must-keep section for each demo milestone)
 
+**Maintainers:** whenever this milestone adds or changes **user-visible** gateway or emulator output (new log lines, flags, or timing), update **this subsection** and, if the canned terminal samples above no longer match reality, refresh the **“Paste Terminal A/B output”** blocks in the same README revision.
+
 - Lighting actions are usually less frequent than RPM/warning transitions because ambient-lux tunnel events are probabilistic while RPM target flips are periodic.
-- Corner-light ON/OFF request emission is idempotent; without a simulated ACK loop (`CornerLightsOnConfirmed` / `CornerLightsOffConfirmed`), repeated ON/OFF request lines are intentionally suppressed while in pending lighting states.
+- Corner-light ON/OFF request emission is idempotent; repeated ON/OFF request lines are intentionally suppressed while in pending lighting states until an ACK is applied.
+- **In-process actuation ACK (this milestone):** the gateway does **not** receive lighting ACKs from `vcan0`. Two Tokio tasks simulate a minimal plant and a second ingress path: commands go out on an internal `ActuationCommand` channel; after a fixed delay (~150 ms, see `gateway_runtime`), “confirmed” feedback is turned into `PhysicalCarVocabulary::{CornerLightsOnConfirmed, CornerLightsOffConfirmed}` and submitted through the same `submit_physical_car_event` path as CAN-derived telemetry. Console lines prefixed with `[actuation-ingress @ corr …]` are that path; wiring lives in `crates/gateway/src/actuation_scaffold.rs` and `gateway_runtime.rs`.
 - Gateway output is action/transition-centric by default; it does not print every incoming telemetry frame unless explicitly instrumented.
 - TimerTick heartbeat logs are disabled by default and only shown when gateway is started with `--print-timer-tick`.
 
@@ -120,7 +126,7 @@ Physical Car name: NASHIK-VC-001, initializing its Digital Twin ...
 ### What it does
 
 1. **Emulator (`emulator`)** — Acts like a minimal “virtual ECU”: model components update speed/RPM/ambient-lux, encode them as `VssSignal`, and **write standard CAN frames** to Linux CAN (`vcan0` by default).
-2. **Gateway (`gateway`)** — Opens the same interface, **reads CAN frames**, decodes known frames into `VssSignal`, maps ingress to `PhysicalCarVocabulary`, projects to `DigitalTwinCarVocabulary`, and sends to controller runtime. A Tokio loop sends periodic `TimerTick` heartbeat events.
+2. **Gateway (`gateway`)** — Opens the same interface, **reads CAN frames**, decodes known frames into `VssSignal`, maps ingress to `PhysicalCarVocabulary`, projects to `DigitalTwinCarVocabulary`, and sends to controller runtime. A Tokio loop sends periodic `TimerTick` heartbeat events. A separate in-process pair of tasks simulates actuator ACK delivery on channels (not on CAN); see Known Demo Behaviors.
 3. **Common library (`common`)** — Shared types and behavior: VSS-style signals, physical/digital vocabulary contracts, projection adapters, strategy (`transition/output`), step contract (`step` + `StepResult`), and controller runtime with optional transition sink.
 
 Together, the crates demonstrate: **encode → CAN → decode → domain events → stateful logic → runtime actuation intents**, mirroring core SDV control-path patterns.
@@ -249,7 +255,7 @@ Lighting remains orthogonal to primary drive state:
 
 #### Limitations (current and expected)
 
-- Actuator ACK channel is modeled in vocabulary but not yet simulated end-to-end by a dedicated async ACK subsystem.
+- Actuator ACK is simulated in-process (channels + Tokio tasks), not as real CAN ACK frames on `vcan0`; replacing that with bus-backed ACKs is future work.
 - Timing/timeout policy is deliberately simple for simulation clarity.
 - No formal concurrent-region statechart runtime yet; orthogonal behavior is represented through context.
 - Determinism depends on explicit event ordering and `now` handling at the step boundary.
