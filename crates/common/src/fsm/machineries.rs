@@ -1,6 +1,35 @@
+//! FSM state, context, events, and domain actions for the vehicle twin.
+//!
+//! ## Corner-lights incomplete / timeout
+//!
+//! ACK wait policy and recovery live in `crate::fsm::step` and `crate::vehicle_constants`. See
+//! README *Known Demo Behaviors* for user-visible effects.
+
 use crate::domain_types::VehicleState;
 use std::time::Instant;
-use time::{OffsetDateTime, UtcOffset, macros::format_description};
+
+/// Which corner-lights switch path an incomplete outcome refers to (ON vs OFF request in flight).
+///
+/// Complements [`LightingState::OnRequested`] / [`LightingState::OffRequested`] and pairs with
+/// [`FsmEvent::CornerLightsOnConfirmed`] / [`FsmEvent::CornerLightsOffConfirmed`] for the success path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CornerLightsSwitchDirection {
+    On,
+    Off,
+}
+
+/// Why a corner-lights command did not **complete** with a positive acknowledgement.
+///
+/// `TimedOut` is applied from `TimerTick` policy in `step` and may later be sent explicitly on ingress.
+/// Future CAN work: add e.g. bus negative-ack codes here and map from `PhysicalCarVocabulary` / gateway decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum CornerLightsIncompleteCause {
+    /// No confirming ACK (and no bus-level failure frame) before the policy deadline — detected on [`FsmEvent::TimerTick`] in `step`.
+    TimedOut,
+    /// Actuator responded with an explicit negative acknowledgement for the command in flight.
+    NegativeAck,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LightingState {
@@ -19,6 +48,8 @@ pub struct VehicleContext {
     pub tyre_pressure_ok: bool,
     pub ambient_lux: u16,
     pub lighting_state: LightingState,
+    /// When set, we are waiting for a corner-lights ACK for the current `OnRequested` / `OffRequested` state.
+    pub lighting_ack_pending_since: Option<Instant>,
 }
 
 impl Default for VehicleContext {
@@ -31,6 +62,7 @@ impl Default for VehicleContext {
             tyre_pressure_ok: true,
             ambient_lux: 100,
             lighting_state: LightingState::Off,
+            lighting_ack_pending_since: None,
         }
     }
 }
@@ -59,6 +91,13 @@ pub enum FsmEvent {
     UpdateAmbientLux(u16),
     CornerLightsOnConfirmed,
     CornerLightsOffConfirmed,
+    /// Corner-lights command did not complete (see [`CornerLightsIncompleteCause`]).
+    ///
+    /// Gateway may inject this when CAN carries negative acknowledgement / failure (future).
+    CornerLightsActuationIncomplete {
+        direction: CornerLightsSwitchDirection,
+        cause: CornerLightsIncompleteCause,
+    },
     // Internal triggers
     TimerTick,
 }
@@ -75,49 +114,6 @@ pub enum FsmAction {
     PublishStateSync,
     /// No action required
     None,
-}
-
-impl FsmAction {
-    /// The execute method now accepts the current state.
-    /// This allows actions like 'PublishStateSync' to actually know
-    /// WHAT state they are syncing without storing it redundantly.
-    pub async fn execute(&self, current_fsm_state: &FsmState) {
-        match self {
-            Self::StartBuzzer => {
-                println!(
-                    "[ACTION @ {}]: 🔊 BUZZER ON - High Stress Detected!",
-                    action_timestamp()
-                );
-            }
-            Self::StopBuzzer => {
-                println!(
-                    "[ACTION @ {}]: 🔇 BUZZER OFF - System Normal.",
-                    action_timestamp()
-                );
-            }
-            Self::LogWarning(msg) => {
-                eprintln!("[ALERT @ {}]: {}", action_timestamp(), msg);
-            }
-            Self::PublishStateSync => {
-                // Here we use the parameter to perform the conversion
-                let public_state = VehicleState::from(current_fsm_state);
-                println!(
-                    "[ACTION @ {}]: 📡 Publishing to Cloud: {:?}",
-                    action_timestamp(),
-                    public_state
-                );
-            }
-            Self::None => {}
-        }
-    }
-}
-
-fn action_timestamp() -> String {
-    let now = OffsetDateTime::now_utc().to_offset(UtcOffset::UTC);
-    let hms = now
-        .format(format_description!("[hour]:[minute]:[second]"))
-        .unwrap_or_else(|_| "00:00:00".to_string());
-    format!("{hms} {:09}", now.nanosecond())
 }
 
 impl From<&FsmState> for VehicleState {

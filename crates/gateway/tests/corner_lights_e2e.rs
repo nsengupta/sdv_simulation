@@ -1,0 +1,115 @@
+//! Controller/FSM integration tests for corner-lights command outcomes.
+//!
+//! Scope:
+//! - Uses `VehicleController` at projection boundary.
+//! - Drives `PhysicalCarVocabulary` events directly.
+//! - Verifies persisted context for ACK / NACK / timeout outcomes.
+//!
+//! Non-scope:
+//! - SocketCAN bus transport wiring (`vcan0`) and plant task process orchestration.
+//!   Those are covered by runtime/manual smoke scenarios and bus-level tests.
+
+use std::time::Duration;
+
+use common::fsm::LightingState;
+use common::vehicle_constants::CORNER_LIGHTS_ON_ACK_WAIT;
+use common::{
+    PhysicalCarVocabulary, VehicleController, VehicleControllerRuntimeOptions, VssSignal,
+};
+
+#[tokio::test]
+async fn controller_fsm_corner_lights_ack_path() {
+    let runtime_options = VehicleControllerRuntimeOptions::default();
+    let (controller, _join) = VehicleController::install_and_start_with_options(
+        "E2E-CORNER-ACK-01".to_string(),
+        runtime_options,
+    )
+    .await
+    .expect("controller start");
+
+    controller.send_power_on().await.expect("power on");
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::TelemetryUpdate(VssSignal::AmbientLux(
+            20,
+        )))
+        .await
+        .expect("low lux event");
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::CornerLightsCommandConfirmed {
+            on_command: true,
+        })
+        .await
+        .expect("ack confirm event");
+
+    let snapshot = controller
+        .get_snapshot(Some(Duration::from_millis(300)))
+        .await
+        .expect("snapshot");
+    assert_eq!(snapshot.context.lighting_state, LightingState::On);
+    assert!(snapshot.context.lighting_ack_pending_since.is_none());
+}
+
+#[tokio::test]
+async fn controller_fsm_corner_lights_nack_path() {
+    let runtime_options = VehicleControllerRuntimeOptions::default();
+    let (controller, _join) = VehicleController::install_and_start_with_options(
+        "E2E-CORNER-NACK-01".to_string(),
+        runtime_options,
+    )
+    .await
+    .expect("controller start");
+
+    controller.send_power_on().await.expect("power on");
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::TelemetryUpdate(VssSignal::AmbientLux(
+            20,
+        )))
+        .await
+        .expect("low lux event");
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::CornerLightsCommandRejected {
+            on_command: true,
+        })
+        .await
+        .expect("nack reject event");
+
+    let snapshot = controller
+        .get_snapshot(Some(Duration::from_millis(300)))
+        .await
+        .expect("snapshot");
+    assert_eq!(snapshot.context.lighting_state, LightingState::Off);
+    assert!(snapshot.context.lighting_ack_pending_since.is_none());
+}
+
+#[tokio::test]
+async fn controller_fsm_corner_lights_no_response_timeout_path() {
+    let runtime_options = VehicleControllerRuntimeOptions::default();
+    let (controller, _join) = VehicleController::install_and_start_with_options(
+        "E2E-CORNER-TIMEOUT-01".to_string(),
+        runtime_options,
+    )
+    .await
+    .expect("controller start");
+
+    controller.send_power_on().await.expect("power on");
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::TelemetryUpdate(VssSignal::AmbientLux(
+            20,
+        )))
+        .await
+        .expect("low lux event");
+
+    // No ACK/NACK event sent: emulate silence, then drive TimerTick past ACK wait deadline.
+    tokio::time::sleep(CORNER_LIGHTS_ON_ACK_WAIT + Duration::from_millis(25)).await;
+    controller
+        .submit_physical_car_event(PhysicalCarVocabulary::TimerTick)
+        .await
+        .expect("timer tick");
+
+    let snapshot = controller
+        .get_snapshot(Some(Duration::from_millis(300)))
+        .await
+        .expect("snapshot");
+    assert_eq!(snapshot.context.lighting_state, LightingState::Off);
+    assert!(snapshot.context.lighting_ack_pending_since.is_none());
+}

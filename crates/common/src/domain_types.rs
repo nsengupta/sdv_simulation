@@ -47,8 +47,13 @@ pub enum PhysicalCarVocabulary {
     TimerTick,
     /// Emergency stop or system reset
     SystemReset,
-    /// Actuator / body-controller confirmed corner lights are on (non-CAN ingress path in simulation).
-    CornerLightsOnConfirmed,
-    /// Actuator / body-controller confirmed corner lights are off (non-CAN ingress path in simulation).
-    CornerLightsOffConfirmed,
+    /// Actuator / body-controller confirmed command completion (ingress via gateway CAN decode, ID `0x204` ACK).
+    ///
+    /// `on_command = true` means the ON request was confirmed; `false` means OFF request confirmed.
+    CornerLightsCommandConfirmed { on_command: bool },
+    /// Actuator / body-controller explicitly rejected command completion (ingress via gateway decode, ID `0x204` NACK).
+    ///
+    /// This is distinct from timeout/no-response; those are inferred by TimerTick policy in the FSM.
+    /// `on_command = true` means the ON request was rejected; `false` means OFF request rejected.
+    CornerLightsCommandRejected { on_command: bool },
 }

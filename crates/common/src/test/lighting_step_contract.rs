@@ -1,6 +1,10 @@
 //! Behavioral contract tests for lighting sub-state behavior.
 
-use crate::fsm::{step, DomainAction, FsmEvent, FsmState, LightingState, VehicleContext};
+use crate::fsm::{
+    step, CornerLightsIncompleteCause, CornerLightsSwitchDirection, DomainAction, FsmEvent,
+    FsmState, LightingState, VehicleContext,
+};
+use crate::vehicle_constants::{CORNER_LIGHTS_OFF_ACK_WAIT, CORNER_LIGHTS_ON_ACK_WAIT};
 use std::time::Instant;
 
 fn valid_twin_context() -> VehicleContext {
@@ -12,6 +16,7 @@ fn valid_twin_context() -> VehicleContext {
         tyre_pressure_ok: true,
         ambient_lux: 100,
         lighting_state: LightingState::Off,
+        lighting_ack_pending_since: None,
     }
 }
 
@@ -87,6 +92,7 @@ fn given_lights_off_when_lux_at_on_threshold_then_requests_corner_lights_on() {
         .actions
         .contains(&DomainAction::RequestCornerLightsOn));
     assert_eq!(result.modified_ctx.lighting_state, LightingState::OnRequested);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_some());
 }
 
 #[test]
@@ -121,6 +127,7 @@ fn given_lights_on_when_lux_at_off_threshold_then_requests_corner_lights_off() {
         .actions
         .contains(&DomainAction::RequestCornerLightsOff));
     assert_eq!(result.modified_ctx.lighting_state, LightingState::OffRequested);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_some());
 }
 
 #[test]
@@ -195,6 +202,7 @@ fn given_on_requested_when_ack_on_then_transitions_to_on() {
         Instant::now(),
     );
     assert_eq!(result.modified_ctx.lighting_state, LightingState::On);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
 }
 
 #[test]
@@ -210,4 +218,333 @@ fn given_off_requested_when_ack_off_then_transitions_to_off() {
         Instant::now(),
     );
     assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
+}
+
+/// Elapsed time is half of `CORNER_LIGHTS_ON_ACK_WAIT`, so `>=` deadline is false — no timeout.
+#[test]
+fn given_on_requested_when_timer_tick_before_ack_deadline_then_stays_pending() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 20,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Idle,
+        &current_ctx,
+        &FsmEvent::TimerTick,
+        t0 + CORNER_LIGHTS_ON_ACK_WAIT / 2,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::OnRequested);
+    assert!(!result
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+/// Elapsed time is half of `CORNER_LIGHTS_OFF_ACK_WAIT`, so `>=` deadline is false — no timeout.
+#[test]
+fn given_off_requested_when_timer_tick_before_ack_deadline_then_stays_pending() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OffRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 50,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Driving,
+        &current_ctx,
+        &FsmEvent::TimerTick,
+        t0 + CORNER_LIGHTS_OFF_ACK_WAIT / 2,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::OffRequested);
+    assert!(!result
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+/// `now - since == CORNER_LIGHTS_ON_ACK_WAIT` satisfies `>=` in `step` — timeout fires.
+#[test]
+fn given_on_requested_when_timer_tick_at_exact_ack_wait_then_times_out_to_off() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 20,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Idle,
+        &current_ctx,
+        &FsmEvent::TimerTick,
+        t0 + CORNER_LIGHTS_ON_ACK_WAIT,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
+    assert!(result.actions.iter().any(|a| matches!(
+        a,
+        DomainAction::LogWarning(msg) if msg.contains("ON request")
+    )));
+}
+
+/// `now - since == CORNER_LIGHTS_OFF_ACK_WAIT` satisfies `>=` in `step` — timeout fires.
+#[test]
+fn given_off_requested_when_timer_tick_at_exact_ack_wait_then_times_out_to_on() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OffRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 50,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Driving,
+        &current_ctx,
+        &FsmEvent::TimerTick,
+        t0 + CORNER_LIGHTS_OFF_ACK_WAIT,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::On);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
+    assert!(result.actions.iter().any(|a| matches!(
+        a,
+        DomainAction::LogWarning(msg) if msg.contains("OFF request")
+    )));
+}
+
+/// After timeout clears pending, the next `TimerTick` must not emit another lighting warning.
+#[test]
+fn given_on_requested_second_timer_tick_after_timeout_does_not_double_warn() {
+    let t0 = Instant::now();
+    let ctx_pending = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 20,
+        ..valid_twin_context()
+    };
+    let deadline = t0 + CORNER_LIGHTS_ON_ACK_WAIT;
+    let after_timeout = step(
+        &FsmState::Idle,
+        &ctx_pending,
+        &FsmEvent::TimerTick,
+        deadline,
+    );
+    assert_eq!(after_timeout.modified_ctx.lighting_state, LightingState::Off);
+    assert_eq!(
+        after_timeout
+            .actions
+            .iter()
+            .filter(|a| matches!(a, DomainAction::LogWarning(_)))
+            .count(),
+        1
+    );
+
+    let second_tick = step(
+        &FsmState::Idle,
+        &after_timeout.modified_ctx,
+        &FsmEvent::TimerTick,
+        deadline + CORNER_LIGHTS_ON_ACK_WAIT,
+    );
+    assert!(!second_tick
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+/// Same idempotence as [`given_on_requested_second_timer_tick_after_timeout_does_not_double_warn`] for OFF pending.
+#[test]
+fn given_off_requested_second_timer_tick_after_timeout_does_not_double_warn() {
+    let t0 = Instant::now();
+    let ctx_pending = VehicleContext {
+        lighting_state: LightingState::OffRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 50,
+        ..valid_twin_context()
+    };
+    let deadline = t0 + CORNER_LIGHTS_OFF_ACK_WAIT;
+    let after_timeout = step(
+        &FsmState::Driving,
+        &ctx_pending,
+        &FsmEvent::TimerTick,
+        deadline,
+    );
+    assert_eq!(after_timeout.modified_ctx.lighting_state, LightingState::On);
+    assert_eq!(
+        after_timeout
+            .actions
+            .iter()
+            .filter(|a| matches!(a, DomainAction::LogWarning(_)))
+            .count(),
+        1
+    );
+
+    let second_tick = step(
+        &FsmState::Driving,
+        &after_timeout.modified_ctx,
+        &FsmEvent::TimerTick,
+        deadline + CORNER_LIGHTS_OFF_ACK_WAIT,
+    );
+    assert!(!second_tick
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+#[test]
+fn given_on_requested_when_actuation_incomplete_timed_out_then_recover_to_off() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Idle,
+        &current_ctx,
+        &FsmEvent::CornerLightsActuationIncomplete {
+            direction: CornerLightsSwitchDirection::On,
+            cause: CornerLightsIncompleteCause::TimedOut,
+        },
+        t0,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
+    assert_eq!(
+        result
+            .actions
+            .iter()
+            .filter(|a| matches!(a, DomainAction::LogWarning(_)))
+            .count(),
+        1
+    );
+    assert!(result.actions.iter().any(|a| matches!(
+        a,
+        DomainAction::LogWarning(msg) if msg.contains("ON request")
+    )));
+}
+
+#[test]
+fn given_off_requested_when_actuation_incomplete_timed_out_then_recover_to_on() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OffRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 50,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Driving,
+        &current_ctx,
+        &FsmEvent::CornerLightsActuationIncomplete {
+            direction: CornerLightsSwitchDirection::Off,
+            cause: CornerLightsIncompleteCause::TimedOut,
+        },
+        t0,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::On);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
+    assert_eq!(
+        result
+            .actions
+            .iter()
+            .filter(|a| matches!(a, DomainAction::LogWarning(_)))
+            .count(),
+        1
+    );
+    assert!(result.actions.iter().any(|a| matches!(
+        a,
+        DomainAction::LogWarning(msg) if msg.contains("OFF request")
+    )));
+}
+
+#[test]
+fn given_on_requested_when_actuation_incomplete_wrong_direction_then_no_op() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 20,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Idle,
+        &current_ctx,
+        &FsmEvent::CornerLightsActuationIncomplete {
+            direction: CornerLightsSwitchDirection::Off,
+            cause: CornerLightsIncompleteCause::TimedOut,
+        },
+        t0,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::OnRequested);
+    assert_eq!(result.modified_ctx.lighting_ack_pending_since, Some(t0));
+    assert!(!result
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+#[test]
+fn given_off_requested_when_actuation_incomplete_wrong_direction_then_no_op() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OffRequested,
+        lighting_ack_pending_since: Some(t0),
+        ambient_lux: 50,
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Driving,
+        &current_ctx,
+        &FsmEvent::CornerLightsActuationIncomplete {
+            direction: CornerLightsSwitchDirection::On,
+            cause: CornerLightsIncompleteCause::TimedOut,
+        },
+        t0,
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::OffRequested);
+    assert_eq!(result.modified_ctx.lighting_ack_pending_since, Some(t0));
+    assert!(!result
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+#[test]
+fn given_lights_off_when_actuation_incomplete_on_then_no_recovery() {
+    let result = step(
+        &FsmState::Idle,
+        &valid_twin_context(),
+        &FsmEvent::CornerLightsActuationIncomplete {
+            direction: CornerLightsSwitchDirection::On,
+            cause: CornerLightsIncompleteCause::TimedOut,
+        },
+        Instant::now(),
+    );
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    assert!(!result
+        .actions
+        .iter()
+        .any(|a| matches!(a, DomainAction::LogWarning(_))));
+}
+
+#[test]
+fn given_idle_on_requested_when_power_off_then_primary_off_and_lighting_cleared() {
+    let t0 = Instant::now();
+    let current_ctx = VehicleContext {
+        lighting_state: LightingState::OnRequested,
+        lighting_ack_pending_since: Some(t0),
+        ..valid_twin_context()
+    };
+    let result = step(
+        &FsmState::Idle,
+        &current_ctx,
+        &FsmEvent::PowerOff,
+        t0,
+    );
+    assert_eq!(result.next_state, FsmState::Off);
+    assert_eq!(result.modified_ctx.lighting_state, LightingState::Off);
+    assert!(result.modified_ctx.lighting_ack_pending_since.is_none());
 }

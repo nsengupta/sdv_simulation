@@ -6,6 +6,8 @@ use anyhow::Result;
 use std::env;
 
 mod actuation_scaffold;
+mod codec;
+mod corner_light_actuation_can;
 mod gateway_runtime;
 mod ingress;
 

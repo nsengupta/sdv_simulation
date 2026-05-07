@@ -1,7 +1,7 @@
 use super::projection::{Projector, ProjectionError};
 use crate::digital_twin::DigitalTwinCarVocabulary;
 use crate::domain_types::PhysicalCarVocabulary;
-use crate::fsm::FsmEvent;
+use crate::fsm::{CornerLightsIncompleteCause, CornerLightsSwitchDirection, FsmEvent};
 use crate::signals::VssSignal;
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -17,8 +17,23 @@ impl Projector<PhysicalCarVocabulary, DigitalTwinCarVocabulary> for PhysicalToDi
             },
             PhysicalCarVocabulary::TimerTick => FsmEvent::TimerTick,
             PhysicalCarVocabulary::SystemReset => FsmEvent::PowerOff,
-            PhysicalCarVocabulary::CornerLightsOnConfirmed => FsmEvent::CornerLightsOnConfirmed,
-            PhysicalCarVocabulary::CornerLightsOffConfirmed => FsmEvent::CornerLightsOffConfirmed,
+            PhysicalCarVocabulary::CornerLightsCommandConfirmed { on_command } => {
+                if on_command {
+                    FsmEvent::CornerLightsOnConfirmed
+                } else {
+                    FsmEvent::CornerLightsOffConfirmed
+                }
+            }
+            PhysicalCarVocabulary::CornerLightsCommandRejected { on_command } => {
+                FsmEvent::CornerLightsActuationIncomplete {
+                    direction: if on_command {
+                        CornerLightsSwitchDirection::On
+                    } else {
+                        CornerLightsSwitchDirection::Off
+                    },
+                    cause: CornerLightsIncompleteCause::NegativeAck,
+                }
+            }
         };
         Ok(DigitalTwinCarVocabulary::Fsm(fsm))
     }

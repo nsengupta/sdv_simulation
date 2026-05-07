@@ -3,5 +3,8 @@ pub mod machineries;
 pub mod step;
 
 pub use engine::{output, transition};
-pub use machineries::{FsmAction, FsmEvent, FsmState, LightingState, VehicleContext};
+pub use machineries::{
+    CornerLightsIncompleteCause, CornerLightsSwitchDirection, FsmAction, FsmEvent, FsmState,
+    LightingState, VehicleContext,
+};
 pub use step::{step, ActorModeHintFromDomain, DomainAction, StepResult, TransitionRecord};

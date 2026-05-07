@@ -77,7 +77,7 @@ fn given_ambient_lux_signal_when_projected_then_maps_to_fsm_ambient_lux() {
 fn given_corner_lights_on_confirmed_when_projected_then_maps_to_fsm() {
     let projector = PhysicalToDigitalProjector;
     let out = projector
-        .project(PhysicalCarVocabulary::CornerLightsOnConfirmed)
+        .project(PhysicalCarVocabulary::CornerLightsCommandConfirmed { on_command: true })
         .expect("on ack projection must succeed");
     match out {
         DigitalTwinCarVocabulary::Fsm(FsmEvent::CornerLightsOnConfirmed) => {}
@@ -89,10 +89,28 @@ fn given_corner_lights_on_confirmed_when_projected_then_maps_to_fsm() {
 fn given_corner_lights_off_confirmed_when_projected_then_maps_to_fsm() {
     let projector = PhysicalToDigitalProjector;
     let out = projector
-        .project(PhysicalCarVocabulary::CornerLightsOffConfirmed)
+        .project(PhysicalCarVocabulary::CornerLightsCommandConfirmed { on_command: false })
         .expect("off ack projection must succeed");
     match out {
         DigitalTwinCarVocabulary::Fsm(FsmEvent::CornerLightsOffConfirmed) => {}
         other => panic!("unexpected off ack mapping: {other:?}"),
+    }
+}
+
+#[test]
+fn given_corner_lights_rejected_when_projected_then_maps_to_incomplete_with_negative_ack() {
+    let projector = PhysicalToDigitalProjector;
+    let out = projector
+        .project(PhysicalCarVocabulary::CornerLightsCommandRejected { on_command: true })
+        .expect("reject projection must succeed");
+    match out {
+        DigitalTwinCarVocabulary::Fsm(FsmEvent::CornerLightsActuationIncomplete {
+            direction,
+            cause,
+        }) => {
+            assert!(matches!(direction, crate::fsm::CornerLightsSwitchDirection::On));
+            assert!(matches!(cause, crate::fsm::CornerLightsIncompleteCause::NegativeAck));
+        }
+        other => panic!("unexpected rejected mapping: {other:?}"),
     }
 }
