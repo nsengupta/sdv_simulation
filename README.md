@@ -278,6 +278,9 @@ Lighting remains orthogonal to primary drive state:
 - Standards-driven signal ingress contract (DBC/AUTOSAR-style source of truth for CAN IDs, payload scaling, and signal semantics), then project from that contract into `PhysicalCarVocabulary`  
 - Emulator modeling notes/tutorial index (starting with `docs/rpm-model-tutorial.md`) for quick onboarding and review  
 - Handcrafted emulator profile injection (test/demo/realistic) so scenario behavior is intentional and reproducible  
+- Add a shared trait/template for device policies so new actuated devices (for example brake lights) follow a fixed implementation checklist  
+- Add structured observability counters/log fields for ignored device responses (reason, device, correlation) to improve diagnostics and trend analysis  
+- Add follow-on transport adapters (Zenoh/uProtocol) that reuse the existing per-device policy core and keep Twin/Controller contracts unchanged  
 
 ---
 

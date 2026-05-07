@@ -6,6 +6,7 @@ use common::{
     VssSignal,
 };
 use socketcan::{CanSocket, Socket};
+use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -20,10 +21,8 @@ pub const ENV_PLANT_DROP_RESPONSE_PROB: &str = "CORNER_LIGHT_PLANT_DROP_RESPONSE
 ///
 /// Semantics: value is `P(ACK)`; default is [`DEFAULT_ACK_NACK_RESPONSE_PROB`] (currently `0.7`).
 pub const ENV_PLANT_ACK_NACK_RESPONSE_PROB: &str = "CORNER_LIGHT_PLANT_ACK_NACK_RESPONSE_PROB";
-use crate::corner_light_actuation_can::{
-    decode_corner_light_payload_from_can_frame, physical_from_corner_light_payload,
-    wire_correlation_meta,
-};
+use crate::devices::corner_lights::can::decode_payload_from_can_frame;
+use crate::devices::corner_lights::policy::{CornerLightPolicy, CornerLightPolicyDecision};
 use crate::ingress;
 
 /// Default SocketCAN interface (matches emulator).
@@ -50,11 +49,13 @@ enum CanIngressEnvelope {
 }
 
 pub async fn run(launch: GatewayLaunchConfig<'_>) -> Result<()> {
-    let (cmd_tx, cmd_rx) = actuation_scaffold::actuator_command_channel();
+    let corner_light_policy = Arc::new(Mutex::new(CornerLightPolicy::default()));
+    let (policy_cmd_tx, policy_cmd_rx) = actuation_scaffold::actuator_command_channel();
+    let (plant_cmd_tx, plant_cmd_rx) = actuation_scaffold::actuator_command_channel();
 
     let runtime_options = VehicleControllerRuntimeOptions {
         log_timer_tick: launch.print_timer_tick,
-        actuation_command_tx: Some(cmd_tx),
+        actuation_command_tx: Some(policy_cmd_tx),
         ..VehicleControllerRuntimeOptions::default()
     };
 
@@ -86,8 +87,10 @@ pub async fn run(launch: GatewayLaunchConfig<'_>) -> Result<()> {
         ENV_PLANT_ACK_NACK_RESPONSE_PROB
     );
 
+    spawn_corner_light_command_router(policy_cmd_rx, plant_cmd_tx, corner_light_policy.clone());
+
     actuation_scaffold::spawn_corner_light_can_plant(
-        cmd_rx,
+        plant_cmd_rx,
         launch.can_interface.to_string(),
         Duration::from_millis(ACTUATION_ACK_DELAY_MS),
         plant_dont_respond_prob,
@@ -110,7 +113,11 @@ pub async fn run(launch: GatewayLaunchConfig<'_>) -> Result<()> {
     }
 
     let (can_tx, can_rx) = mpsc::unbounded_channel();
-    let _can_reader = spawn_can_reader_thread(launch.can_interface.to_string(), can_tx)?;
+    let _can_reader = spawn_can_reader_thread(
+        launch.can_interface.to_string(),
+        corner_light_policy,
+        can_tx,
+    )?;
     run_can_ingress_dispatch_loop(controller, can_rx).await
 }
 
@@ -132,6 +139,7 @@ fn spawn_timer_tick_loop(controller: VehicleController) {
 /// - a dedicated thread avoids occupying Tokio worker/blocking-pool capacity indefinitely.
 fn spawn_can_reader_thread(
     can_interface: String,
+    corner_light_policy: Arc<Mutex<CornerLightPolicy>>,
     tx: mpsc::UnboundedSender<CanIngressEnvelope>,
 ) -> Result<JoinHandle<()>> {
     let socket = CanSocket::open(&can_interface)?;
@@ -155,28 +163,58 @@ fn spawn_can_reader_thread(
                     }
                     continue;
                 }
-                if let Some(payload) = decode_corner_light_payload_from_can_frame(&frame) {
-                    let Some(physical) = physical_from_corner_light_payload(payload) else {
-                        continue;
+                if let Some(payload) = decode_payload_from_can_frame(&frame) {
+                    let decision = {
+                        let mut policy = corner_light_policy.lock().expect("corner-light policy lock");
+                        policy.on_response(payload)
                     };
-                    if let Some((session, sequence)) = wire_correlation_meta(&frame) {
-                        if tx
-                            .send(CanIngressEnvelope::ActuationResponse {
-                                physical,
-                                session,
-                                sequence,
-                            })
-                            .is_err()
-                        {
-                            break;
+                    match decision {
+                        CornerLightPolicyDecision::Accept {
+                            physical,
+                            session,
+                            sequence,
+                        } => {
+                            if tx
+                                .send(CanIngressEnvelope::ActuationResponse {
+                                    physical,
+                                    session,
+                                    sequence,
+                                })
+                                .is_err()
+                            {
+                                break;
+                            }
                         }
-                    } else if tx.send(CanIngressEnvelope::Physical(physical)).is_err() {
-                        break;
+                        CornerLightPolicyDecision::Ignore(reason) => {
+                            eprintln!(
+                                "[actuation-can-ingress ignored]: reason={reason} session={} seq={}",
+                                payload.session_id, payload.sequence_no
+                            );
+                        }
                     }
                 }
             }
         })?;
     Ok(handle)
+}
+
+fn spawn_corner_light_command_router(
+    mut policy_cmd_rx: mpsc::Receiver<common::ActuationCommand>,
+    plant_cmd_tx: mpsc::Sender<common::ActuationCommand>,
+    corner_light_policy: Arc<Mutex<CornerLightPolicy>>,
+) {
+    tokio::spawn(async move {
+        while let Some(cmd) = policy_cmd_rx.recv().await {
+            {
+                let mut policy = corner_light_policy.lock().expect("corner-light policy lock");
+                policy.on_command_sent(&cmd);
+            }
+            if let Err(e) = plant_cmd_tx.send(cmd).await {
+                eprintln!("[gateway]: failed to route actuation command to plant: {e}");
+                break;
+            }
+        }
+    });
 }
 
 async fn run_can_ingress_dispatch_loop(

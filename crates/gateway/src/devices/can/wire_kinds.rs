@@ -1,7 +1,4 @@
-//! Shared wire-kind constants for gateway codecs.
-//!
-//! Keep all `KIND_*` values in one place to avoid collisions
-//! as additional actuator command families are introduced.
+//! CAN wire-kind constants shared by device adapters/codecs.
 
 pub const KIND_CORNER_LIGHT_CMD_ON: u8 = 0x01;
 pub const KIND_CORNER_LIGHT_CMD_OFF: u8 = 0x02;
